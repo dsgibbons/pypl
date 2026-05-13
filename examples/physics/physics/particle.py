@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, PrivateAttr
 
-from physics_example_project.kinematics import SMass, SQuaternion, SVector3
+from physics.kinematics import SMass, SQuaternion, SVector3
 
 
 class IParticle(BaseModel, ABC):

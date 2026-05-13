@@ -22,14 +22,14 @@
 ├── src/pypl/                # the pypl package
 ├── tests/                   # pytest suite (incl. PlantUML syntax validation)
 └── examples/
-    ├── shop-example-project/
-    └── physics-example-project/
+    ├── shop/
+    └── physics/
 ```
 
 ## Conventions
 
 - pypl source lives under `src/pypl/`; tests live under `tests/`.
-- New example projects go under `examples/<name>-example-project/` with their
+- New example projects go under `examples/<name>/` with their
   own `pyproject.toml`, `README.md`, `main.py`, and `pypl.toml`. Add them to
   `[tool.uv.workspace]` members and to the `dev` dependency group.
 - Keep imports of `cpp.*` markers from `pypl` so analyzer tests cover them.

@@ -64,24 +64,24 @@ def _plantuml_check(directory: Path) -> None:
 
 
 def test_shop_class_diagrams_are_valid(diagrams: Path) -> None:
-    _emit_class("shop_example_project", diagrams)
+    _emit_class("shop", diagrams)
     _plantuml_check(diagrams)
 
 
 def test_physics_class_diagrams_are_valid(diagrams: Path) -> None:
-    _emit_class("physics_example_project", diagrams)
+    _emit_class("physics", diagrams)
     _plantuml_check(diagrams)
 
 
 def test_shop_sequence_diagram_is_valid(diagrams: Path) -> None:
     _emit_seq(
-        script=EXAMPLES / "shop-example-project" / "main.py",
-        package="shop_example_project",
+        script=EXAMPLES / "shop" / "main.py",
+        package="shop",
         include=[
-            "shop_example_project.shop.MyShop",
-            "shop_example_project.shop.ShopRegistry",
-            "shop_example_project.inventory.GroceryShopInventory",
-            "shop_example_project.inventory.ClothesShopInventory",
+            "shop.shop.MyShop",
+            "shop.shop.ShopRegistry",
+            "shop.inventory.GroceryShopInventory",
+            "shop.inventory.ClothesShopInventory",
         ],
         out=diagrams,
     )
@@ -90,14 +90,14 @@ def test_shop_sequence_diagram_is_valid(diagrams: Path) -> None:
 
 def test_physics_sequence_diagram_is_valid(diagrams: Path) -> None:
     _emit_seq(
-        script=EXAMPLES / "physics-example-project" / "main.py",
-        package="physics_example_project",
+        script=EXAMPLES / "physics" / "main.py",
+        package="physics",
         include=[
-            "physics_example_project.world.World",
-            "physics_example_project.particle.PointMass",
-            "physics_example_project.particle.RigidBody",
-            "physics_example_project.force.ConstantForce",
-            "physics_example_project.force.SpringForce",
+            "physics.world.World",
+            "physics.particle.PointMass",
+            "physics.particle.RigidBody",
+            "physics.force.ConstantForce",
+            "physics.force.SpringForce",
         ],
         out=diagrams,
     )

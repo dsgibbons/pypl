@@ -4,9 +4,9 @@ requires-python = ">=3.14"
 
 [manifest]
 members = [
-    "physics-example-project",
+    "physics",
     "pypl",
-    "shop-example-project",
+    "shop",
 ]
 
 [[package]]
@@ -64,9 +64,9 @@ wheels = [
 ]
 
 [[package]]
-name = "physics-example-project"
+name = "physics"
 version = "0.1.0"
-source = { editable = "examples/physics-example-project" }
+source = { editable = "examples/physics" }
 dependencies = [
     { name = "pydantic" },
     { name = "pypl" },
@@ -175,12 +175,12 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "physics-example-project" },
+    { name = "physics" },
     { name = "poethepoet" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "shop-example-project" },
+    { name = "shop" },
 ]
 
 [package.metadata]
@@ -188,12 +188,12 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.13.4" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "physics-example-project", editable = "examples/physics-example-project" },
+    { name = "physics", editable = "examples/physics" },
     { name = "poethepoet", specifier = ">=0.30" },
     { name = "pyright", specifier = ">=1.1.409" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "ruff", specifier = ">=0.15.12" },
-    { name = "shop-example-project", editable = "examples/shop-example-project" },
+    { name = "shop", editable = "examples/shop" },
 ]
 
 [[package]]
@@ -277,9 +277,9 @@ wheels = [
 ]
 
 [[package]]
-name = "shop-example-project"
+name = "shop"
 version = "0.1.0"
-source = { editable = "examples/shop-example-project" }
+source = { editable = "examples/shop" }
 dependencies = [
     { name = "pydantic" },
     { name = "pypl" },

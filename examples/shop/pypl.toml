@@ -1,0 +1,13 @@
+[trace]
+entry = "main.py"
+include = [
+    "shop.shop.MyShop",
+    "shop.shop.ShopRegistry",
+    "shop.inventory.GroceryShopInventory",
+    "shop.inventory.ClothesShopInventory",
+]
+exclude_methods = []
+
+[class_diagram]
+out = "diagrams/"
+stubs = "qualified"

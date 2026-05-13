@@ -7,9 +7,9 @@ from typing import Annotated
 from pydantic import BaseModel, Field, PrivateAttr
 
 from pypl import cpp
-from shop_example_project.geo import Location
-from shop_example_project.inventory import IInventory, VShopInventory
-from shop_example_project.pricing import Sales
+from shop.geo import Location
+from shop.inventory import IInventory, VShopInventory
+from shop.pricing import Sales
 
 
 class IShop(BaseModel, ABC):

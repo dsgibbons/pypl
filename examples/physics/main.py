@@ -1,10 +1,10 @@
 """Multi-instance entry point for the dynamic-trace mode."""
 
-from physics_example_project.force import ConstantForce, SpringForce
-from physics_example_project.kinematics import SMass, SVector3
-from physics_example_project.particle import PointMass
-from physics_example_project.units import EUnitSystem
-from physics_example_project.world import SSimulationConfig, World
+from physics.force import ConstantForce, SpringForce
+from physics.kinematics import SMass, SVector3
+from physics.particle import PointMass
+from physics.units import EUnitSystem
+from physics.world import SSimulationConfig, World
 
 
 def make_world() -> World:

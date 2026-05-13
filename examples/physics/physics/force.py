@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
 
-from physics_example_project.kinematics import SVector3
+from physics.kinematics import SVector3
 
 
 class IForce(BaseModel, ABC):

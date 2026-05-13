@@ -1,11 +1,11 @@
 """Multi-instance entry point for the dynamic-trace mode."""
 
-from shop_example_project.geo import Location
-from shop_example_project.inventory import (
+from shop.geo import Location
+from shop.inventory import (
     ClothesShopInventory,
     GroceryShopInventory,
 )
-from shop_example_project.shop import MyShop, ShopRegistry
+from shop.shop import MyShop, ShopRegistry
 
 
 def make_shop(

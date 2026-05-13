@@ -1,4 +1,4 @@
-"""physics_example_project: a small rigid-body simulation sketch.
+"""physics: a small rigid-body simulation sketch.
 
 Each submodule exercises specific pypl behaviours:
 
@@ -10,17 +10,17 @@ Each submodule exercises specific pypl behaviours:
 - ``field``       -- generic class Field[T] (PEP-695 syntax)
 """
 
-from physics_example_project.force import (
+from physics.force import (
     ConstantForce,
     FrictionForce,
     IForce,
     SpringForce,
     VForce,
 )
-from physics_example_project.kinematics import SMass, SQuaternion, SVector3
-from physics_example_project.particle import IParticle, PointMass, RigidBody, VParticle
-from physics_example_project.units import EUnitSystem, meters_to_feet
-from physics_example_project.world import SSimulationConfig, World
+from physics.kinematics import SMass, SQuaternion, SVector3
+from physics.particle import IParticle, PointMass, RigidBody, VParticle
+from physics.units import EUnitSystem, meters_to_feet
+from physics.world import SSimulationConfig, World
 
 __all__ = [
     "ConstantForce",

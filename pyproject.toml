@@ -20,8 +20,8 @@ packages = ["src/pypl"]
 
 [dependency-groups]
 dev = [
-    "shop-example-project",
-    "physics-example-project",
+    "shop",
+    "physics",
     "poethepoet>=0.30",
     "pyright>=1.1.409",
     "pytest>=9.0.3",
@@ -51,12 +51,12 @@ lint         = { cmd = "ruff check .", help = "Static lint with ruff" }
 lint-fix     = { cmd = "ruff check --fix .", help = "Apply ruff's auto-fixes" }
 typecheck    = { cmd = "pyright", help = "Static type-check the package, tests, and examples" }
 test         = { cmd = "pytest tests -q", help = "Run the unit-test suite" }
-e2e          = { shell = "rm -rf .poe-e2e && uv run pypl class shop_example_project --out .poe-e2e/shop && uv run pypl class physics_example_project --out .poe-e2e/physics && uv run pypl seq examples/shop-example-project/main.py --package shop_example_project --out .poe-e2e/shop && uv run pypl seq examples/physics-example-project/main.py --package physics_example_project --out .poe-e2e/physics && rm -rf .poe-e2e", help = "Run pypl class + seq on both example projects (smoke test)" }
+e2e          = { shell = "rm -rf .poe-e2e && uv run pypl class shop --out .poe-e2e/shop && uv run pypl class physics --out .poe-e2e/physics && uv run pypl seq examples/shop/main.py --package shop --out .poe-e2e/shop && uv run pypl seq examples/physics/main.py --package physics --out .poe-e2e/physics && rm -rf .poe-e2e", help = "Run pypl class + seq on both example projects (smoke test)" }
 check        = { sequence = ["format-check", "lint", "typecheck", "test", "e2e"], help = "Run every read-only check (matches CI)" }
 
 [tool.uv.workspace]
-members = ["examples/shop-example-project", "examples/physics-example-project"]
+members = ["examples/shop", "examples/physics"]
 
 [tool.uv.sources]
-shop-example-project = { workspace = true }
-physics-example-project = { workspace = true }
+shop = { workspace = true }
+physics = { workspace = true }

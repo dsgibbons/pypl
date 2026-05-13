@@ -39,13 +39,13 @@ uv run pypl seq   <script.py> --package <pkg> [--out diagrams/] [--config pypl.t
 End-to-end against the bundled examples:
 
 ```
-uv run pypl class shop_example_project --out diagrams/shop/
-uv run pypl seq examples/shop-example-project/main.py \
-    --package shop_example_project --out diagrams/shop/
+uv run pypl class shop --out diagrams/shop/
+uv run pypl seq examples/shop/main.py \
+    --package shop --out diagrams/shop/
 
-uv run pypl class physics_example_project --out diagrams/physics/
-uv run pypl seq examples/physics-example-project/main.py \
-    --package physics_example_project --out diagrams/physics/
+uv run pypl class physics --out diagrams/physics/
+uv run pypl seq examples/physics/main.py \
+    --package physics --out diagrams/physics/
 ```
 
 Render the `.puml` files with any PlantUML installation (or the VS Code
@@ -208,8 +208,8 @@ Configure which classes to trace via `pypl.toml`:
 [trace]
 entry = "main.py"
 include = [
-    "shop_example_project.shop.MyShop",
-    "shop_example_project.shop.ShopRegistry",
+    "shop.shop.MyShop",
+    "shop.shop.ShopRegistry",
 ]
 exclude_methods = ["model_post_init"]   # dunders + Pydantic injections are filtered automatically
 ```
@@ -247,8 +247,8 @@ stubs = "qualified"          # "qualified" | "bare" | "none"
 ├── src/pypl/                # the pypl package
 ├── tests/                   # unit tests
 └── examples/
-    ├── shop-example-project/
-    └── physics-example-project/
+    ├── shop/
+    └── physics/
 ```
 
 ## Development
@@ -256,5 +256,5 @@ stubs = "qualified"          # "qualified" | "bare" | "none"
 ```
 uv sync
 uv run pytest                # unit tests
-uv run pypl class shop_example_project --out /tmp/diagrams/
+uv run pypl class shop --out /tmp/diagrams/
 ```

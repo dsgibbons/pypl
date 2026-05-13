@@ -11,9 +11,9 @@ from typing import Annotated, Final
 
 from pydantic import BaseModel, Field, PrivateAttr
 
-from physics_example_project.force import IForce
-from physics_example_project.particle import IParticle
-from physics_example_project.units import EUnitSystem
+from physics.force import IForce
+from physics.particle import IParticle
+from physics.units import EUnitSystem
 from pypl import cpp
 
 
