@@ -85,9 +85,18 @@ class Node:
     legacy:   cpp.Raw[Buffer]              # Buffer*
 ```
 
-If a field references a user-defined `class` or `abstract` without a marker,
-`pypl` defaults to **raw pointer** and emits a warning. Structs, enums, and
-variants are treated as value types by default (no warning).
+If a field references a user-defined `class` / `abstract` without a marker,
+`pypl` treats it as **owned** by default:
+
+- **Polymorphic target** (abstract base, or class with subclasses in-package)
+  → `std::unique_ptr<T>`.
+- **Plain concrete class** → `T` value member.
+- **Struct / enum / variant** → `T` value member.
+
+A post-pass scans the IR and warns when the same target is owned by more than
+one distinct class (`duplicate-owner`) or when a class owns itself by value
+(`self-owned-value`). Fix either by marking one of the owners `cpp.Shared` /
+`cpp.Raw` / `cpp.Weak` / `cpp.Ref`.
 
 ### Containers
 
@@ -124,6 +133,66 @@ Markers nest: `cpp.Vec[cpp.Unique[Node]]` → `std::vector<std::unique_ptr<Node>
 | `cpp.Raw[T] \| None`      | `T*`                  (already nullable) |
 | `cpp.Ref[T] \| None`      | warns: references cannot be null |
 | `cpp.ConstRef[T] \| None` | warns: references cannot be null |
+
+## Numeric widths
+
+Two ways to express C++ integer width:
+
+**1. Annotated Pydantic `Field(ge=, le=)` — pypl infers the narrowest fit:**
+
+| Constraint | C++ |
+|---|---|
+| `ge=0, le=255` | `std::uint8_t` |
+| `ge=0, le=65535` | `std::uint16_t` |
+| `ge=0, le=4_294_967_295` | `std::uint32_t` |
+| `ge=0` (no upper) | `unsigned int` |
+| `ge=-128, le=127` | `std::int8_t` |
+| `ge=-32768, le=32767` | `std::int16_t` |
+
+(Only applies when the base type is `int`. Floats stay `double`.)
+
+**2. `cpp.*` aliases — for method args and any non-Pydantic site:**
+
+```python
+from pypl import cpp
+
+def push(count: cpp.size, byte: cpp.u8, signed_id: cpp.i32) -> cpp.u64: ...
+```
+
+Aliases: `cpp.uint`, `cpp.u8`/`u16`/`u32`/`u64`, `cpp.i8`/`i16`/`i32`/`i64`,
+`cpp.size` (→ `std::size_t`), `cpp.ssize` (→ `std::ptrdiff_t`), `cpp.f32`,
+`cpp.f64`.
+
+## `const` and `final`
+
+```python
+from typing import Final
+from pypl import cpp
+
+@cpp.final                       # -> <<final>> stereotype on the class
+class Engine(BaseModel):
+    max_threads: Final[int] = 16     # -> const int maxThreads
+
+    @cpp.const                       # -> appends ` const` to the rendered signature
+    def thread_count(self) -> int: ...
+```
+
+`Final[T]` (or `cpp.Const[T]`) renders as `const T`. `@cpp.const` marks a method
+as non-mutating; `@cpp.final` marks a class or method as `final`.
+
+## Built-in value-type vocabulary
+
+These Python types are recognised and mapped to their C++ counterparts:
+
+| Python | C++ |
+|---|---|
+| `int` / `float` / `str` / `bool` | `int` / `double` / `std::string` / `bool` |
+| `bytes` | `std::vector<std::uint8_t>` |
+| `complex` | `std::complex<double>` |
+| `datetime.datetime` | `std::chrono::system_clock::time_point` |
+| `datetime.date` | `std::chrono::year_month_day` |
+| `datetime.timedelta` | `std::chrono::nanoseconds` |
+| `pathlib.Path` / `pathlib.PurePath` | `std::filesystem::path` |
 
 ## Sequence tracing
 

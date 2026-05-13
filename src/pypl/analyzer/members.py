@@ -54,6 +54,9 @@ def _own_field_annotations(cls: type) -> dict[str, Any]:
             anno = getattr(finfo, "annotation", None)
             if anno is None:
                 continue
+            md = getattr(finfo, "metadata", None) or ()
+            if md:
+                anno = typing.Annotated[anno, *md]
             out[fname] = anno
         # Own private attributes
         own_private = cls.__dict__.get("__private_attributes__", {})
@@ -288,6 +291,8 @@ def _function_to_method(
         return_type=return_ref,
         is_static=is_static,
         is_abstract=bool(getattr(func, "__isabstractmethod__", False)),
+        is_const=bool(getattr(func, "__cpp_const__", False)),
+        is_final=bool(getattr(func, "__cpp_final__", False)),
     )
 
 

@@ -27,10 +27,13 @@ class TypeRef:
     `referenced` lists fully-qualified Python class names (e.g.
     ``example_project.geo.Location``) so the emitter can draw association
     arrows and generate stub classes for cross-module references.
+    `owns` lists qualified class names this reference *owns* (value member or
+    std::unique_ptr) — used by the duplicate-owner cross-check.
     """
 
     cpp_text: str
     referenced: tuple[str, ...] = ()
+    owns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class Method:
     is_static: bool = False
     is_abstract: bool = False
     is_const: bool = False
+    is_final: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,7 @@ class Class:
     qualified_name: str
     kind: ClassKind
     is_const: bool = False
+    is_final: bool = False
     generic_params: tuple[str, ...] = ()
     bases: tuple[str, ...] = ()
     members: tuple[Member, ...] = ()

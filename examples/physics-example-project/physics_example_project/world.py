@@ -1,6 +1,15 @@
-"""World: top-level simulation container exercising cpp.* smart pointers."""
+"""World: top-level simulation container exercising cpp.* smart pointers.
 
-from pydantic import BaseModel, PrivateAttr
+This module also exercises the wider value-type vocabulary (datetime, Path),
+``Final[T]`` -> ``const T``, ``@cpp.const`` / ``@cpp.final`` decorators, and
+unsigned integer width inference from ``Field(ge=, le=)``.
+"""
+
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Final
+
+from pydantic import BaseModel, Field, PrivateAttr
 
 from physics_example_project.force import IForce
 from physics_example_project.particle import IParticle
@@ -14,14 +23,24 @@ class SSimulationConfig(BaseModel):
     model_config = {"frozen": True}
 
     dt: float
-    max_steps: int
+    max_steps: Annotated[int, Field(ge=0, le=65535)]  # -> std::uint16_t
     unit_system: EUnitSystem
+    started_at: datetime | None = None
+    recording_path: Path | None = None
 
 
+@cpp.final
 class World(BaseModel):
-    """Holds particles (unique ownership) and forces (shared)."""
+    """Holds particles (unique ownership) and forces (shared).
+
+    Marked ``cpp.final`` -> rendered with the ``<<final>>`` stereotype.
+    ``max_history`` uses ``Final[int]`` -> ``const int``. ``_step_count``
+    uses ``cpp.u64`` -> ``std::uint64_t``.
+    """
 
     model_config = {"arbitrary_types_allowed": True}
+
+    max_history: Final[int] = 1024
 
     _config: SSimulationConfig = PrivateAttr()
     _particles: list[cpp.Unique[IParticle]] = PrivateAttr(default_factory=list)
@@ -30,7 +49,7 @@ class World(BaseModel):
     _focus_particle: cpp.Raw[IParticle] | None = PrivateAttr(default=None)
     _force_by_name: cpp.OMap[str, IForce] = PrivateAttr(default_factory=dict)
     _frame_history: cpp.Vec[float] = PrivateAttr(default_factory=list)
-    _step_count: int = PrivateAttr(default=0)
+    _step_count: cpp.u64 = PrivateAttr(default=0)
 
     def step(self) -> None:
         self._step_count += 1
@@ -45,5 +64,10 @@ class World(BaseModel):
         self._forces.append(force)
         self._force_by_name[name] = force
 
+    @cpp.const
     def total_kinetic_energy(self) -> float:
         return sum(p.kinetic_energy() for p in self._particles)
+
+    @cpp.const
+    def step_count(self) -> cpp.u64:
+        return self._step_count

@@ -45,6 +45,7 @@ def analyze_package(package_name: str) -> AnalysisResult:
     module_variants: dict[str, dict[frozenset, str]] = {}
     variant_qnames: dict[frozenset, str] = {}
     seen_variant_ids: set[int] = set()
+    has_subclasses: set[str] = set()
     for mod_name, mod in submodules:
         local = _collect_module_variants(mod, seen_variant_ids)
         module_variants[mod_name] = local
@@ -53,6 +54,13 @@ def analyze_package(package_name: str) -> AnalysisResult:
         for cls in _own_classes(mod, mod_name):
             qname = f"{cls.__module__}.{cls.__qualname__}"
             kind_map[qname] = kind_mod.infer_kind(cls)
+            for base in cls.__bases__:
+                base_qname = f"{base.__module__}.{base.__qualname__}"
+                has_subclasses.add(base_qname)
+
+    polymorphic = {q for q, k in kind_map.items() if k is ClassKind.ABSTRACT} | (
+        has_subclasses & set(kind_map)
+    )
 
     # Pass 2: build IR for each module.
     modules: list[Module] = []
@@ -63,6 +71,7 @@ def analyze_package(package_name: str) -> AnalysisResult:
             kind_map=kind_map,
             current_module=mod_name,
             variant_qnames=variant_qnames,
+            polymorphic=polymorphic,
         )
         classes: list[Class] = []
         for cls in _own_classes(mod, mod_name):
@@ -78,7 +87,43 @@ def analyze_package(package_name: str) -> AnalysisResult:
             )
         )
 
+    _check_duplicate_owners(modules, warnings)
+
     return AnalysisResult(modules=modules, warnings=warnings.warnings)
+
+
+def _check_duplicate_owners(modules: list[Module], warnings: WarningCollector) -> None:
+    """Warn when the same target class is owned (held by value or unique_ptr)
+    by more than one distinct owner class, or when a class owns itself.
+    """
+    owners_of: dict[str, list[str]] = {}
+    locations: dict[str, str] = {}
+    for mod in modules:
+        for cls in mod.classes:
+            for member in cls.members:
+                for target in member.type.owns:
+                    owners_of.setdefault(target, []).append(cls.qualified_name)
+                    locations.setdefault(cls.qualified_name, "")
+
+    warnings.set_source("")
+    for target, owner_list in owners_of.items():
+        distinct = list(dict.fromkeys(owner_list))
+        if target in distinct:
+            warnings.emit(
+                "self-owned-value",
+                f"{target} owns itself by value; that's a recursive value "
+                f"type and won't compile. Use cpp.Unique/cpp.Shared/cpp.Raw.",
+                target,
+            )
+        if len(distinct) > 1:
+            owners_str = ", ".join(distinct)
+            warnings.emit(
+                "duplicate-owner",
+                f"{target} is owned by multiple classes ({owners_str}). "
+                "Consider cpp.Shared for shared ownership, or cpp.Raw / "
+                "cpp.Weak / cpp.Ref to mark one as non-owning.",
+                target,
+            )
 
 
 def _iter_modules(pkg: types.ModuleType) -> list[tuple[str, types.ModuleType]]:
@@ -158,6 +203,7 @@ def _class_to_ir(
     model_config = getattr(cls, "model_config", None)
     if isinstance(model_config, dict) and model_config.get("frozen"):
         is_const = True
+    is_final = bool(getattr(cls, "__cpp_final__", False))
 
     if kind is ClassKind.ENUM:
         values: list[str] = []
@@ -184,6 +230,7 @@ def _class_to_ir(
         qualified_name=qname,
         kind=kind,
         is_const=is_const,
+        is_final=is_final,
         generic_params=generics,
         bases=bases,
         members=fields,

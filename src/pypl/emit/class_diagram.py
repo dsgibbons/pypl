@@ -147,6 +147,8 @@ def render_class(c: Class, current_module: str) -> list[str]:
         header = f'class "{display}" as {alias}'
     if c.is_const:
         header += " <<const>>"
+    if c.is_final:
+        header += " <<final>>"
     body = f"{header} {{"
     lines = [body]
     for member in c.members:
@@ -194,7 +196,11 @@ def _render_method(meth: Method) -> str:
         parts.append("{abstract}")
     parts.append(meth.return_type.cpp_text)
     params = ", ".join(_render_param(p) for p in meth.params)
-    suffix = " const" if meth.is_const else ""
+    suffix = ""
+    if meth.is_const:
+        suffix += " const"
+    if meth.is_final:
+        suffix += " final"
     parts.append(f"{meth.name}({params}){suffix}")
     return " ".join(parts)
 

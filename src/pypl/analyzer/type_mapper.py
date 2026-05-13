@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import datetime
 import importlib
+import pathlib
 import sys
 import types
 import typing
 from enum import Enum
-from typing import TypeVar, Union, get_args, get_origin
+from typing import Final, TypeVar, Union, get_args, get_origin
 
 from pypl.analyzer.model import ClassKind, TypeRef
-from pypl.cpp import _CppContainer, _CppRef
+from pypl.cpp import _CppConst, _CppContainer, _CppFloat, _CppInt, _CppRef, infer_int_width
 from pypl.naming import qualified_class_to_cpp
 from pypl.warnings import WarningCollector
 
@@ -20,7 +22,13 @@ _PRIMITIVE_CPP: dict[type, str] = {
     str: "std::string",
     bool: "bool",
     bytes: "std::vector<std::uint8_t>",
+    complex: "std::complex<double>",
     type(None): "void",
+    datetime.datetime: "std::chrono::system_clock::time_point",
+    datetime.date: "std::chrono::year_month_day",
+    datetime.timedelta: "std::chrono::nanoseconds",
+    pathlib.Path: "std::filesystem::path",
+    pathlib.PurePath: "std::filesystem::path",
 }
 
 
@@ -44,6 +52,7 @@ class TypeMapper:
         kind_map: dict[str, ClassKind],
         current_module: str,
         variant_qnames: dict[frozenset, str] | None = None,
+        polymorphic: set[str] | None = None,
     ) -> None:
         self.warnings = warnings
         self.kind_map = kind_map
@@ -51,6 +60,9 @@ class TypeMapper:
         # frozenset(args) -> fully qualified alias name (e.g.
         # "example_project.inventory.VShopInventory") spanning all modules.
         self.variant_qnames = variant_qnames or {}
+        # Qnames of classes that should be owned via unique_ptr when held by
+        # value (i.e. abstract bases or classes that have subclasses).
+        self.polymorphic = polymorphic or set()
 
     def map(self, t: object, *, where: str) -> TypeRef:
         return self._map(t, where, ref_marker=None)
@@ -73,6 +85,11 @@ class TypeMapper:
                 target_kind=None,
             )
 
+        # Bare TypeAliasType from pypl.cpp (e.g. cpp.u32, cpp.size). Unwrap to
+        # its underlying ``Annotated[T, marker]`` value and recurse.
+        if isinstance(t, typing.TypeAliasType) and getattr(t, "__module__", "") == "pypl.cpp":
+            return self._map(t.__value__, where, ref_marker)
+
         # Subscripted TypeAliasType from pypl.cpp (e.g. cpp.Unique[Foo]).
         alias_origin = getattr(t, "__origin__", None)
         if (
@@ -84,15 +101,25 @@ class TypeMapper:
             meta = tuple(getattr(template, "__metadata__", ()) or ())
             ref_local = ref_marker
             container_marker: _CppContainer | None = None
+            is_const = False
             for m in meta:
                 if isinstance(m, _CppRef):
                     ref_local = m
                 elif isinstance(m, _CppContainer):
                     container_marker = m
+                elif isinstance(m, _CppConst):
+                    is_const = True
             if container_marker is not None:
                 return self._render_container_alias(container_marker, args, where, ref_local)
             if len(args) == 1:
-                return self._map(args[0], where, ref_local)
+                inner_ref = self._map(args[0], where, ref_local)
+                if is_const:
+                    inner_ref = TypeRef(
+                        cpp_text=f"const {inner_ref.cpp_text}",
+                        referenced=inner_ref.referenced,
+                        owns=inner_ref.owns,
+                    )
+                return inner_ref
 
         if hasattr(t, "__metadata__"):
             inner = typing.get_args(t)[0]
@@ -100,11 +127,17 @@ class TypeMapper:
             new_ref = ref_marker
             container_marker = None
             array_size: object | None = None
+            numeric_override: _CppInt | _CppFloat | None = None
+            is_const = False
             for m in meta:
                 if isinstance(m, _CppRef):
                     new_ref = m
                 elif isinstance(m, _CppContainer):
                     container_marker = m
+                elif isinstance(m, _CppInt | _CppFloat):
+                    numeric_override = m
+                elif isinstance(m, _CppConst):
+                    is_const = True
             if container_marker is _CppContainer.ARRAY:
                 if len(meta) >= 2:
                     array_size = meta[1]
@@ -112,9 +145,32 @@ class TypeMapper:
                 return self._map_container_override(
                     inner, container_marker, array_size, where, new_ref
                 )
-            return self._map(inner, where, new_ref)
+            if numeric_override is None and inner is int:
+                numeric_override = _pydantic_int_override(meta)
+            if numeric_override is not None:
+                base = TypeRef(cpp_text=numeric_override.value)
+                if is_const:
+                    base = TypeRef(cpp_text=f"const {base.cpp_text}")
+                return self._apply_ref(base, new_ref, where, target_kind=None)
+            inner_ref = self._map(inner, where, new_ref)
+            if is_const:
+                inner_ref = TypeRef(
+                    cpp_text=f"const {inner_ref.cpp_text}",
+                    referenced=inner_ref.referenced,
+                    owns=inner_ref.owns,
+                )
+            return inner_ref
 
         origin = get_origin(t)
+
+        if origin is Final:
+            inner = get_args(t)[0]
+            inner_ref = self._map(inner, where, ref_marker)
+            return TypeRef(
+                cpp_text=f"const {inner_ref.cpp_text}",
+                referenced=inner_ref.referenced,
+                owns=inner_ref.owns,
+            )
 
         if origin is Union or origin is types.UnionType:
             return self._map_union(t, where, ref_marker)
@@ -145,6 +201,7 @@ class TypeMapper:
                 ref_marker,
                 where,
                 target_kind=ClassKind.ENUM,
+                target_qname=qname,
             )
 
         if isinstance(t, type):
@@ -154,6 +211,7 @@ class TypeMapper:
                 ref_marker,
                 where,
                 target_kind=self.kind_map.get(qname),
+                target_qname=qname,
             )
 
         return TypeRef(cpp_text=str(t))
@@ -203,12 +261,14 @@ class TypeMapper:
             ref = TypeRef(
                 cpp_text=f"std::unordered_set<{inner.cpp_text}>",
                 referenced=inner.referenced,
+                owns=inner.owns,
             )
         elif origin is frozenset:
             inner = self._map(args[0], where, None) if args else TypeRef("auto")
             ref = TypeRef(
                 cpp_text=f"const std::unordered_set<{inner.cpp_text}>",
                 referenced=inner.referenced,
+                owns=inner.owns,
             )
         elif origin is dict:
             k = self._map(args[0], where, None) if args else TypeRef("auto")
@@ -216,12 +276,14 @@ class TypeMapper:
             ref = TypeRef(
                 cpp_text=f"std::unordered_map<{k.cpp_text}, {v.cpp_text}>",
                 referenced=k.referenced + v.referenced,
+                owns=k.owns + v.owns,
             )
         elif origin is tuple:
             mapped = [self._map(a, where, None) for a in args]
             text = f"std::tuple<{', '.join(m.cpp_text for m in mapped)}>"
             referenced = tuple(r for m in mapped for r in m.referenced)
-            ref = TypeRef(cpp_text=text, referenced=referenced)
+            owns_chain = tuple(o for m in mapped for o in m.owns)
+            ref = TypeRef(cpp_text=text, referenced=referenced, owns=owns_chain)
         else:
             ref = TypeRef(cpp_text=str(t))
         return self._apply_ref(ref, ref_marker, where, target_kind=None)
@@ -241,7 +303,11 @@ class TypeMapper:
                 _CppContainer.OSET: "std::set<{0}>",
             }[marker]
             return self._apply_ref(
-                TypeRef(cpp_text=tmpl.format(inner.cpp_text), referenced=inner.referenced),
+                TypeRef(
+                    cpp_text=tmpl.format(inner.cpp_text),
+                    referenced=inner.referenced,
+                    owns=inner.owns,
+                ),
                 ref_marker,
                 where,
                 target_kind=None,
@@ -254,6 +320,7 @@ class TypeMapper:
                 TypeRef(
                     cpp_text=f"std::array<{inner.cpp_text}, {size_text}>",
                     referenced=inner.referenced,
+                    owns=inner.owns,
                 ),
                 ref_marker,
                 where,
@@ -271,6 +338,7 @@ class TypeMapper:
                 TypeRef(
                     cpp_text=tmpl.format(k.cpp_text, v.cpp_text),
                     referenced=k.referenced + v.referenced,
+                    owns=k.owns + v.owns,
                 ),
                 ref_marker,
                 where,
@@ -330,19 +398,25 @@ class TypeMapper:
         ref_marker: _CppRef | None,
         where: str,
         target_kind: ClassKind | None,
+        target_qname: str | None = None,
     ) -> TypeRef:
+        if ref_marker is _CppRef.UNIQUE and target_qname is not None:
+            text = _REF_FORMAT[ref_marker].format(inner.cpp_text)
+            return TypeRef(cpp_text=text, referenced=inner.referenced, owns=(target_qname,))
         if ref_marker is not None:
             text = _REF_FORMAT[ref_marker].format(inner.cpp_text)
             return TypeRef(cpp_text=text, referenced=inner.referenced)
 
         if target_kind in (ClassKind.CLASS, ClassKind.ABSTRACT):
-            self.warnings.emit(
-                "unmarked-class-ref",
-                f"member of class type {inner.cpp_text} has no cpp.* marker; defaulting to raw pointer",
-                where,
-            )
-            text = _REF_FORMAT[_CppRef.RAW].format(inner.cpp_text)
-            return TypeRef(cpp_text=text, referenced=inner.referenced)
+            # Default for an unmarked class/abstract ref is *ownership*.
+            # Polymorphic targets -> unique_ptr (so virtual dispatch works).
+            # Otherwise hold by value.
+            if target_qname is not None and target_qname in self.polymorphic:
+                text = _REF_FORMAT[_CppRef.UNIQUE].format(inner.cpp_text)
+            else:
+                text = inner.cpp_text
+            owns = (target_qname,) if target_qname is not None else ()
+            return TypeRef(cpp_text=text, referenced=inner.referenced, owns=owns)
 
         return inner
 
@@ -366,6 +440,41 @@ class TypeMapper:
             except Exception:
                 return None
         return getattr(mod, name, None)
+
+
+def _pydantic_int_override(meta: tuple[object, ...]) -> _CppInt | None:
+    """Inspect Annotated metadata for Pydantic Field(ge=, le=) constraints and
+    return the appropriate ``_CppInt`` width, or None if no numeric constraints
+    are present.
+
+    Pydantic v2 wraps these in a ``FieldInfo`` whose ``metadata`` list holds
+    ``annotated_types.Ge``/``Le``/``Gt``/``Lt`` instances; flatten through that
+    so both forms (bare ``Annotated[int, Ge(0), Le(255)]`` and ``Field(ge=0, le=255)``)
+    are recognised.
+    """
+    flat: list[object] = []
+    for m in meta:
+        flat.append(m)
+        nested = getattr(m, "metadata", None)
+        if isinstance(nested, list | tuple):
+            flat.extend(nested)
+
+    ge: int | None = None
+    le: int | None = None
+    for m in flat:
+        v = getattr(m, "ge", None)
+        if isinstance(v, int) and not isinstance(v, bool):
+            ge = v
+        v = getattr(m, "gt", None)
+        if isinstance(v, int) and not isinstance(v, bool):
+            ge = (v + 1) if ge is None else max(ge, v + 1)
+        v = getattr(m, "le", None)
+        if isinstance(v, int) and not isinstance(v, bool):
+            le = v
+        v = getattr(m, "lt", None)
+        if isinstance(v, int) and not isinstance(v, bool):
+            le = (v - 1) if le is None else min(le, v - 1)
+    return infer_int_width(ge, le)
 
 
 def _is_already_nullable_pointer(cpp_text: str) -> bool:

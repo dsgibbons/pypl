@@ -53,16 +53,37 @@ def test_ref_optional_warns():
     assert "nullable-reference" in codes
 
 
-def test_unmarked_class_warns_and_defaults_to_raw():
-    m, w = _mk(kind_map={f"{_Foo.__module__}.{_Foo.__qualname__}": ClassKind.CLASS})
+def test_unmarked_polymorphic_class_owns_via_unique_ptr():
+    qname = f"{_Foo.__module__}.{_Foo.__qualname__}"
+    w = WarningCollector()
+    m = TypeMapper(
+        warnings=w,
+        kind_map={qname: ClassKind.ABSTRACT},
+        current_module="tests.test_type_mapper",
+        variant_qnames={},
+        polymorphic={qname},
+    )
     ref = m.map(_Foo, where="x")
-    assert ref.cpp_text.endswith("*")
+    assert "std::unique_ptr<" in ref.cpp_text
+    assert qname in ref.owns
+    # Owns-by-default is silent.
     codes = [warn.code for warn in w.warnings]
-    assert "unmarked-class-ref" in codes
+    assert "unmarked-class-ref" not in codes
+
+
+def test_unmarked_non_polymorphic_class_owns_by_value():
+    qname = f"{_Foo.__module__}.{_Foo.__qualname__}"
+    m, w = _mk(kind_map={qname: ClassKind.CLASS})
+    ref = m.map(_Foo, where="x")
+    assert not ref.cpp_text.endswith("*")
+    assert "std::unique_ptr<" not in ref.cpp_text
+    assert qname in ref.owns
+    codes = [warn.code for warn in w.warnings]
+    assert "unmarked-class-ref" not in codes
 
 
 def test_value_class_no_warn():
-    # Struct kind -> value type, no warning.
+    # Struct kind -> value type, no warning, not tracked as owned.
     m, w = _mk(kind_map={f"{_Foo.__module__}.{_Foo.__qualname__}": ClassKind.STRUCT})
     ref = m.map(_Foo, where="x")
     assert not ref.cpp_text.endswith("*")
