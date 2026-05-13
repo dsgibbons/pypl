@@ -43,9 +43,11 @@ def _run_class(args: argparse.Namespace) -> int:
     opts = EmitOptions(out_dir=out_dir, stub_style=cfg.class_diagram.stubs)
     paths = emit_class_diagrams(result, opts)
 
+    from pypl.warnings import format_warning, should_use_color
+
+    color = should_use_color(sys.stderr)
     for w in result.warnings:
-        loc = f"{w.location}: " if w.location else ""
-        print(f"pypl warning [{w.code}] {loc}{w.message}", file=sys.stderr)
+        print(format_warning(w, color=color), file=sys.stderr)
 
     for p in paths:
         print(p)

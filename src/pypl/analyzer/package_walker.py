@@ -136,6 +136,8 @@ def _class_to_ir(
 ) -> Class:
     qname = f"{cls.__module__}.{cls.__qualname__}"
     kind = kind_mod.infer_kind(cls)
+    source = _class_source(cls)
+    warnings.set_source(source)
 
     if not kind_mod.prefix_matches(cls.__name__, kind):
         expected = kind_mod.expected_prefix(kind)
@@ -162,6 +164,7 @@ def _class_to_ir(
         if isinstance(cls, type) and issubclass(cls, Enum):
             for member in cls:
                 values.append(member.name)
+        warnings.set_source("")
         return Class(
             name=cls.__name__,
             qualified_name=qname,
@@ -174,6 +177,7 @@ def _class_to_ir(
     methods = collect_methods(cls, mapper, where_prefix=qname, validators_to_skip=validators)
     bases = collect_bases(cls)
     generics = collect_generic_params(cls)
+    warnings.set_source("")
 
     return Class(
         name=cls.__name__,
@@ -185,6 +189,20 @@ def _class_to_ir(
         members=fields,
         methods=methods,
     )
+
+
+def _class_source(cls: type) -> str:
+    try:
+        path = inspect.getsourcefile(cls) or inspect.getfile(cls)
+    except Exception:
+        return ""
+    try:
+        _, lineno = inspect.getsourcelines(cls)
+    except Exception:
+        return path or ""
+    if path:
+        return f"{path}:{lineno}"
+    return ""
 
 
 def _module_variants_to_ir(

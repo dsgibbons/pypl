@@ -2,15 +2,15 @@
 
 from abc import ABC, abstractmethod
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 from physics_example_project.kinematics import SMass, SQuaternion, SVector3
 
 
 class IParticle(BaseModel, ABC):
-    _position: SVector3
-    _velocity: SVector3
-    _mass: SMass
+    _position: SVector3 = PrivateAttr()
+    _velocity: SVector3 = PrivateAttr()
+    _mass: SMass = PrivateAttr()
 
     @abstractmethod
     def integrate(self, dt: float) -> None: ...
@@ -43,7 +43,7 @@ class PointMass(IParticle):
 
 
 class RigidBody(IParticle):
-    _orientation: SQuaternion
+    _orientation: SQuaternion = PrivateAttr()
     name: str
 
     def integrate(self, dt: float) -> None:

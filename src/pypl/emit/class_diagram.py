@@ -129,22 +129,22 @@ def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOption
 
 def render_class(c: Class, current_module: str) -> list[str]:
     alias = _alias_id(c.qualified_name)
-    label = c.name
     generic = ""
     if c.generic_params:
         generic = "<" + ", ".join(c.generic_params) + ">"
+    display = f"{c.name}{generic}"
     if c.kind is ClassKind.ENUM:
-        lines = [f'enum {label} as "{label}" {{']
+        lines = [f'enum "{display}" as {alias} {{']
         for v in c.enum_values:
             lines.append(f"  {v}")
         lines.append("}")
         return lines
     if c.kind is ClassKind.ABSTRACT:
-        header = f"abstract class {label}{generic} as {alias}"
+        header = f'abstract class "{display}" as {alias}'
     elif c.kind is ClassKind.STRUCT:
-        header = f"struct {label}{generic} as {alias}"
+        header = f'struct "{display}" as {alias}'
     else:
-        header = f"class {label}{generic} as {alias}"
+        header = f'class "{display}" as {alias}'
     if c.is_const:
         header += " <<const>>"
     body = f"{header} {{"
@@ -159,7 +159,7 @@ def render_class(c: Class, current_module: str) -> list[str]:
 
 def render_variant(v: Variant) -> list[str]:
     alias = _alias_id(v.qualified_name)
-    return [f"class {v.name} as {alias} <<std::variant>>"]
+    return [f'class "{v.name}" as {alias} <<std::variant>>']
 
 
 def render_free_functions(mod_name: str, funcs: tuple[FreeFunction, ...]) -> list[str]:

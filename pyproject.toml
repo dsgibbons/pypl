@@ -38,7 +38,8 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501", "B008"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "examples"]
+exclude = ["**/__pycache__", "**/.venv", ".poe-e2e", "**/diagrams"]
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
 reportMissingImports = "error"
@@ -48,7 +49,7 @@ format       = { cmd = "ruff format .", help = "Rewrite source with ruff format"
 format-check = { cmd = "ruff format --check .", help = "Fail if any file needs reformatting" }
 lint         = { cmd = "ruff check .", help = "Static lint with ruff" }
 lint-fix     = { cmd = "ruff check --fix .", help = "Apply ruff's auto-fixes" }
-typecheck    = { cmd = "pyright src tests", help = "Static type-check the package and tests" }
+typecheck    = { cmd = "pyright", help = "Static type-check the package, tests, and examples" }
 test         = { cmd = "pytest tests -q", help = "Run the unit-test suite" }
 e2e          = { shell = "rm -rf .poe-e2e && uv run pypl class shop_example_project --out .poe-e2e/shop && uv run pypl class physics_example_project --out .poe-e2e/physics && uv run pypl seq examples/shop-example-project/main.py --package shop_example_project --out .poe-e2e/shop && uv run pypl seq examples/physics-example-project/main.py --package physics_example_project --out .poe-e2e/physics && rm -rf .poe-e2e", help = "Run pypl class + seq on both example projects (smoke test)" }
 check        = { sequence = ["format-check", "lint", "typecheck", "test", "e2e"], help = "Run every read-only check (matches CI)" }

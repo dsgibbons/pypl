@@ -99,6 +99,7 @@ class Warning_:
     code: str
     message: str
     location: str
+    source: str = ""
 
 
 @dataclass

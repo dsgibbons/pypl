@@ -17,7 +17,6 @@ from pypl.analyzer.package_walker import analyze_package
 from pypl.emit.class_diagram import EmitOptions, emit_class_diagrams
 from pypl.trace.runner import run_trace
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO_ROOT / "examples"
 

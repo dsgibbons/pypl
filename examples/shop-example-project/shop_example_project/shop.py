@@ -4,7 +4,7 @@ the full set of cpp.* pointer markers."""
 from abc import ABC, abstractmethod
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from pypl import cpp
 from shop_example_project.geo import Location
@@ -13,9 +13,9 @@ from shop_example_project.pricing import Sales
 
 
 class IShop(BaseModel, ABC):
-    _location: Location
-    _postcode: Annotated[int, Field(ge=0, le=10000)]
-    _shop_inventory: VShopInventory
+    _location: Location = PrivateAttr()
+    _postcode: Annotated[int, Field(ge=0, le=10000)] = PrivateAttr()
+    _shop_inventory: VShopInventory = PrivateAttr()
 
     @abstractmethod
     def calculate_sales(self, year: int) -> Sales: ...
@@ -44,20 +44,19 @@ class ShopRegistry(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    _children: list[cpp.Unique[IShop]] = []
-    _parent: cpp.Weak[ShopRegistry] | None = None
-    _cache: cpp.Shared[IInventory] | None = None
-    _legacy_buf: cpp.Raw[IInventory] | None = None
-    _default_shop: cpp.Ref[IShop] | None = None  # warns: ref cannot be null
-    _readonly_shop: cpp.ConstRef[IShop] | None = None  # warns: ref cannot be null
-    _by_postcode: cpp.OMap[str, IShop] = {}
-    _hot_table: dict[str, IShop] = {}  # bare dict -> std::unordered_map
+    _children: list[cpp.Unique[IShop]] = PrivateAttr(default_factory=list)
+    _parent: cpp.Weak[ShopRegistry] | None = PrivateAttr(default=None)
+    _cache: cpp.Shared[IInventory] | None = PrivateAttr(default=None)
+    _legacy_buf: cpp.Raw[IInventory] | None = PrivateAttr(default=None)
+    _default_shop: cpp.Ref[IShop] | None = PrivateAttr(default=None)
+    _readonly_shop: cpp.ConstRef[IShop] | None = PrivateAttr(default=None)
+    _by_postcode: cpp.OMap[str, IShop] = PrivateAttr(default_factory=dict)
+    _hot_table: dict[str, IShop] = PrivateAttr(default_factory=dict)
     # Deliberately unmarked class reference -> warns + defaults to raw pointer.
-    _focus: IShop | None = None
+    _focus: IShop | None = PrivateAttr(default=None)
 
     def add(self, shop: IShop) -> None:
-        # We mutate a private list directly on a frozen=False model.
-        self._children.append(shop)  # type: ignore[arg-type]
+        self._children.append(shop)
 
     def total_items(self) -> int:
         return sum(s.get_num_items() for s in self._children)
