@@ -2,9 +2,14 @@
 
 ## Workflow rules
 
-- **Run `uv run poe check` after every change.** It runs `format-check`, `lint`,
-  `typecheck`, `test`, and `e2e` (pypl class + seq on both example projects).
-  If any step fails, fix the underlying issue before continuing.
+- **Ask before planning or implementing** when there is ambiguity or missing
+  information. Do not assume — ask the user first.
+- **After every significant feature or fix:** run `uv run poe check`, verify
+  `README.md` and `uv run pypl --help` output are consistent with the change,
+  then commit and push.
+- `uv run poe check` runs `format-check`, `lint`, `typecheck`, `test`, and
+  `e2e` (pypl class + seq on both example projects). Fix any failure before
+  continuing.
 - Use `uv run poe format` / `poe lint-fix` to apply automatic fixes.
 - All other tasks are listed by `uv run poe --help`.
 

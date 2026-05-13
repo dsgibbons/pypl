@@ -16,7 +16,12 @@ from pypl.analyzer.model import (
     Param,
     Variant,
 )
-from pypl.naming import module_path_to_cpp, qualified_class_to_cpp
+from pypl.naming import (
+    module_path_to_cpp,
+    qualified_class_to_cpp,
+    relative_module_path,
+    relativize_cpp_text,
+)
 
 
 @dataclass
@@ -25,9 +30,28 @@ class EmitOptions:
     stub_style: str = "qualified"  # qualified | bare | none
 
 
+@dataclass(frozen=True)
+class _RenderCtx:
+    current_module: str
+    all_module_names: frozenset[str]
+    stub_style: str
+
+    def rel(self, cpp_text: str) -> str:
+        return relativize_cpp_text(self.current_module, cpp_text, self.all_module_names)
+
+    def stub_display(self, qname: str) -> str:
+        if "." not in qname:
+            return qname
+        target_module, class_name = qname.rsplit(".", 1)
+        if target_module in self.all_module_names:
+            rel = relative_module_path(self.current_module, target_module)
+            return f"{rel}::{class_name}" if rel else class_name
+        return qualified_class_to_cpp(qname)
+
+
 def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]:
     opts.out_dir.mkdir(parents=True, exist_ok=True)
-    # Build qualified-name -> module name index for stub generation.
+    all_module_names: frozenset[str] = frozenset(mod.name for mod in result.modules)
     class_to_module: dict[str, str] = {}
     for mod in result.modules:
         for c in mod.classes:
@@ -38,7 +62,12 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
     for mod in result.modules:
         if not mod.classes and not mod.variants and not mod.free_functions:
             continue
-        text = render_module(mod, class_to_module, opts)
+        ctx = _RenderCtx(
+            current_module=mod.name,
+            all_module_names=all_module_names,
+            stub_style=opts.stub_style,
+        )
+        text = render_module(mod, class_to_module, opts, ctx)
         filename = mod.name.replace(".", "__") + ".puml"
         path = opts.out_dir / filename
         path.write_text(text, encoding="utf-8")
@@ -46,7 +75,18 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
     return written
 
 
-def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOptions) -> str:
+def render_module(
+    mod: Module,
+    class_to_module: dict[str, str],
+    opts: EmitOptions,
+    ctx: _RenderCtx | None = None,
+) -> str:
+    if ctx is None:
+        ctx = _RenderCtx(
+            current_module=mod.name,
+            all_module_names=frozenset(),
+            stub_style=opts.stub_style,
+        )
     cpp_path = module_path_to_cpp(mod.name)
     lines: list[str] = []
     lines.append(f"@startuml {mod.name.replace('.', '__')}")
@@ -59,7 +99,7 @@ def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOption
     referenced_qnames: set[str] = set()
 
     for c in mod.classes:
-        lines.extend(render_class(c, mod.name))
+        lines.extend(render_class(c, ctx))
         lines.append("")
         for member in c.members:
             referenced_qnames.update(member.type.referenced)
@@ -77,7 +117,7 @@ def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOption
             referenced_qnames.add(alt)
 
     if mod.free_functions:
-        lines.extend(render_free_functions(mod.name, mod.free_functions))
+        lines.extend(render_free_functions(mod.name, mod.free_functions, ctx))
         lines.append("")
         for f in mod.free_functions:
             for p in f.params:
@@ -88,9 +128,9 @@ def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOption
     for qname in sorted(foreign_qnames):
         if qname not in class_to_module:
             continue
-        if opts.stub_style == "none":
+        if ctx.stub_style == "none":
             continue
-        lines.extend(render_stub(qname, opts.stub_style))
+        lines.extend(render_stub(qname, ctx))
     lines.append("")
 
     # Inheritance arrows
@@ -127,7 +167,7 @@ def render_module(mod: Module, class_to_module: dict[str, str], opts: EmitOption
     return "\n".join(lines) + "\n"
 
 
-def render_class(c: Class, current_module: str) -> list[str]:
+def render_class(c: Class, ctx: _RenderCtx) -> list[str]:
     alias = _alias_id(c.qualified_name)
     generic = ""
     if c.generic_params:
@@ -152,9 +192,9 @@ def render_class(c: Class, current_module: str) -> list[str]:
     body = f"{header} {{"
     lines = [body]
     for member in c.members:
-        lines.append(f"  {_render_member(member)}")
+        lines.append(f"  {_render_member(member, ctx)}")
     for method in c.methods:
-        lines.append(f"  {_render_method(method)}")
+        lines.append(f"  {_render_method(method, ctx)}")
     lines.append("}")
     return lines
 
@@ -164,38 +204,41 @@ def render_variant(v: Variant) -> list[str]:
     return [f'class "{v.name}" as {alias} <<std::variant>>']
 
 
-def render_free_functions(mod_name: str, funcs: tuple[FreeFunction, ...]) -> list[str]:
+def render_free_functions(
+    mod_name: str, funcs: tuple[FreeFunction, ...], ctx: _RenderCtx
+) -> list[str]:
     cpp_ns = module_path_to_cpp(mod_name)
     alias = _alias_id(mod_name) + "__ns"
     lines = [f'class "{cpp_ns}" as {alias} <<namespace>> {{']
     for f in funcs:
-        params = ", ".join(_render_param(p) for p in f.params)
-        ret = f.return_type.cpp_text
+        params = ", ".join(_render_param(p, ctx) for p in f.params)
+        ret = ctx.rel(f.return_type.cpp_text)
         lines.append(f"  + {{static}} {ret} {f.name}({params})")
     lines.append("}")
     return lines
 
 
-def render_stub(qname: str, style: str) -> list[str]:
+def render_stub(qname: str, ctx: _RenderCtx) -> list[str]:
     alias = _alias_id(qname)
-    if style == "bare":
+    if ctx.stub_style == "bare":
         bare = qname.rsplit(".", 1)[-1]
         return [f'class "{bare}" as {alias} <<stub>>']
-    return [f'class "{qualified_class_to_cpp(qname)}" as {alias} <<stub>>']
+    display = ctx.stub_display(qname)
+    return [f'class "{display}" as {alias} <<stub>>']
 
 
-def _render_member(m: Member) -> str:
-    return f"{m.visibility.value} {m.type.cpp_text} {m.name}"
+def _render_member(m: Member, ctx: _RenderCtx) -> str:
+    return f"{m.visibility.value} {ctx.rel(m.type.cpp_text)} {m.name}"
 
 
-def _render_method(meth: Method) -> str:
+def _render_method(meth: Method, ctx: _RenderCtx) -> str:
     parts: list[str] = [meth.visibility.value]
     if meth.is_static:
         parts.append("{static}")
     if meth.is_abstract:
         parts.append("{abstract}")
-    parts.append(meth.return_type.cpp_text)
-    params = ", ".join(_render_param(p) for p in meth.params)
+    parts.append(ctx.rel(meth.return_type.cpp_text))
+    params = ", ".join(_render_param(p, ctx) for p in meth.params)
     suffix = ""
     if meth.is_const:
         suffix += " const"
@@ -205,8 +248,8 @@ def _render_method(meth: Method) -> str:
     return " ".join(parts)
 
 
-def _render_param(p: Param) -> str:
-    return f"{p.type.cpp_text} {p.name}"
+def _render_param(p: Param, ctx: _RenderCtx) -> str:
+    return f"{ctx.rel(p.type.cpp_text)} {p.name}"
 
 
 def _alias_id(qname: str) -> str:

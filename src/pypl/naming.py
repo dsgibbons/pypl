@@ -27,3 +27,42 @@ def module_path_to_cpp(dotted: str) -> str:
 def qualified_class_to_cpp(qualified: str) -> str:
     """example_project.geo.Location -> example_project::geo::Location."""
     return qualified.replace(".", "::")
+
+
+def relative_module_path(current: str, target: str) -> str:
+    """Relative C++ path from one dotted module name to another.
+
+    Same module → ""  |  parent → ".."  |  sibling → "..::sibling"  |  child → "child"
+    """
+    curr_parts = current.split(".")
+    tgt_parts = target.split(".")
+    common = 0
+    for a, b in zip(curr_parts, tgt_parts, strict=False):
+        if a != b:
+            break
+        common += 1
+    up = len(curr_parts) - common
+    down = tgt_parts[common:]
+    return "::".join([".."] * up + down)
+
+
+def relativize_cpp_text(
+    current_module: str, cpp_text: str, module_names: frozenset[str] | set[str]
+) -> str:
+    """Replace absolute in-package module prefixes with paths relative to *current_module*.
+
+    Modules not in *module_names* (stdlib, external packages) are left untouched.
+    Replacements are applied longest-first to avoid shorter prefixes matching inside longer ones.
+    """
+    replacements: list[tuple[str, str]] = []
+    for mod in module_names:
+        cpp_mod = module_path_to_cpp(mod)
+        rel = relative_module_path(current_module, mod)
+        from_str = cpp_mod + "::"
+        to_str = (rel + "::") if rel else ""
+        replacements.append((from_str, to_str))
+    replacements.sort(key=lambda x: len(x[0]), reverse=True)
+    result = cpp_text
+    for from_str, to_str in replacements:
+        result = result.replace(from_str, to_str)
+    return result
