@@ -67,26 +67,27 @@ def _own_field_annotations(cls: type) -> dict[str, Any]:
         if callable(annotate):
             try:
                 raw = annotate(1)
+            except Exception:
+                raw = None
+            if isinstance(raw, dict):
                 for fname, anno in raw.items():
                     out.setdefault(fname, anno)
-            except Exception:
-                pass
         return out
     # Plain class
-    raw = cls.__dict__.get("__annotations__")
-    if not raw:
+    raw_plain: object = cls.__dict__.get("__annotations__")
+    if not raw_plain:
         # Python 3.14 lazy annotations: __annotate_func__(2) returns evaluated dict.
         annotate = cls.__dict__.get("__annotate_func__")
         if callable(annotate):
             try:
-                raw = annotate(2)
+                raw_plain = annotate(2)
             except Exception:
                 try:
-                    raw = annotate(1)
+                    raw_plain = annotate(1)
                 except Exception:
-                    raw = None
-    if raw:
-        for fname, anno in raw.items():
+                    raw_plain = None
+    if isinstance(raw_plain, dict):
+        for fname, anno in raw_plain.items():
             out[fname] = anno
     return out
 

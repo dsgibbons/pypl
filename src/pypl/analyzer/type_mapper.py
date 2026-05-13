@@ -96,7 +96,7 @@ class TypeMapper:
 
         if hasattr(t, "__metadata__"):
             inner = typing.get_args(t)[0]
-            meta = tuple(t.__metadata__)
+            meta = tuple(getattr(t, "__metadata__", ()))
             new_ref = ref_marker
             container_marker = None
             array_size: object | None = None
@@ -248,8 +248,8 @@ class TypeMapper:
             )
         if marker is _CppContainer.ARRAY and args:
             inner = self._map(args[0], where, None)
-            size = args[1] if len(args) > 1 else "N"
-            size_text = size.__forward_arg__ if hasattr(size, "__forward_arg__") else str(size)
+            size: object = args[1] if len(args) > 1 else "N"
+            size_text = getattr(size, "__forward_arg__", None) or str(size)
             return self._apply_ref(
                 TypeRef(
                     cpp_text=f"std::array<{inner.cpp_text}, {size_text}>",
@@ -293,7 +293,7 @@ class TypeMapper:
             else:
                 t = self._map(args[0], where, None)
             if marker is _CppContainer.ARRAY:
-                size_text = size.__forward_arg__ if hasattr(size, "__forward_arg__") else str(size)
+                size_text = getattr(size, "__forward_arg__", None) or str(size)
                 ref = TypeRef(
                     cpp_text=f"std::array<{t.cpp_text}, {size_text}>",
                     referenced=t.referenced,
