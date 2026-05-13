@@ -1,4 +1,5 @@
 from pypl.naming import (
+    module_display_path,
     module_path_to_cpp,
     qualified_class_to_cpp,
     relative_module_path,
@@ -64,40 +65,75 @@ def test_relative_module_path_cousin():
     assert relative_module_path("pkg.a.b", "pkg.x.y") == "..::..::x::y"
 
 
+# --- module_display_path ---
+
+
+def test_display_path_same():
+    assert module_display_path("pkg.shop", "pkg.shop") == ""
+
+
+def test_display_path_child():
+    assert module_display_path("pkg", "pkg.geo") == "geo"
+
+
+def test_display_path_deep_child():
+    assert module_display_path("pkg.shop", "pkg.shop.sub") == "sub"
+
+
+def test_display_path_sibling():
+    # Sibling keeps full global path.
+    assert module_display_path("pkg.shop", "pkg.inventory") == "pkg::inventory"
+
+
+def test_display_path_parent():
+    # Parent keeps full global path.
+    assert module_display_path("pkg.shop", "pkg") == "pkg"
+
+
+def test_display_path_cousin():
+    assert module_display_path("pkg.a.b", "pkg.x.y") == "pkg::x::y"
+
+
+def test_display_path_external():
+    assert module_display_path("pkg.shop", "other.lib") == "other::lib"
+
+
 # --- relativize_cpp_text ---
 
 _MODULES = frozenset({"pkg", "pkg.shop", "pkg.inventory", "pkg.geo"})
 
 
 def test_relativize_same_module():
-    # Same-module reference stripped to bare class name.
     result = relativize_cpp_text("pkg.shop", "pkg::shop::MyShop", _MODULES)
     assert result == "MyShop"
 
 
 def test_relativize_sibling_module():
+    # Sibling keeps full global path.
     result = relativize_cpp_text("pkg.shop", "pkg::inventory::IInventory", _MODULES)
-    assert result == "..::inventory::IInventory"
+    assert result == "pkg::inventory::IInventory"
 
 
 def test_relativize_parent_module():
+    # Parent keeps full global path.
     result = relativize_cpp_text("pkg.shop", "pkg::SomeClass", _MODULES)
-    assert result == "..::SomeClass"
+    assert result == "pkg::SomeClass"
 
 
 def test_relativize_child_module():
+    # Child: relative descent
     result = relativize_cpp_text("pkg", "pkg::geo::Location", _MODULES)
     assert result == "geo::Location"
 
 
 def test_relativize_nested_type():
-    # Relativization inside a template argument.
+    # Sibling inside template arg: full global path preserved.
     result = relativize_cpp_text(
         "pkg.shop",
         "std::unique_ptr<pkg::inventory::IInventory>",
         _MODULES,
     )
-    assert result == "std::unique_ptr<..::inventory::IInventory>"
+    assert result == "std::unique_ptr<pkg::inventory::IInventory>"
 
 
 def test_relativize_leaves_stdlib_untouched():
@@ -106,6 +142,6 @@ def test_relativize_leaves_stdlib_untouched():
 
 
 def test_relativize_longest_prefix_wins():
-    # Ensure pkg::shop:: is replaced before pkg:: to avoid mangling.
+    # pkg::shop is a sibling of pkg::inventory — full global path kept.
     result = relativize_cpp_text("pkg.inventory", "pkg::shop::Foo", _MODULES)
-    assert result == "..::shop::Foo"
+    assert result == "pkg::shop::Foo"

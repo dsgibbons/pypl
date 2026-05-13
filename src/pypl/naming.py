@@ -46,21 +46,37 @@ def relative_module_path(current: str, target: str) -> str:
     return "::".join([".."] * up + down)
 
 
+def module_display_path(current: str, target: str) -> str:
+    """Prefix to use when showing a type from *target* in *current*'s diagram.
+
+    - Same module  → "" (bare class name)
+    - Child module → relative descent path  (e.g. "sub::detail")
+    - Anything else → full qualified path   (e.g. "pkg::inventory")
+    """
+    if target == current:
+        return ""
+    if target.startswith(current + "."):
+        return target[len(current) + 1 :].replace(".", "::")
+    return target.replace(".", "::")
+
+
 def relativize_cpp_text(
     current_module: str, cpp_text: str, module_names: frozenset[str] | set[str]
 ) -> str:
-    """Replace absolute in-package module prefixes with paths relative to *current_module*.
+    """Relativize in-package module prefixes in a C++ type string.
 
-    Modules not in *module_names* (stdlib, external packages) are left untouched.
-    Replacements are applied longest-first to avoid shorter prefixes matching inside longer ones.
+    Same-module types get bare names; child-module types get relative descent
+    paths; all other types (parent, sibling, external) keep their full path.
+    Replacements applied longest-first to avoid partial matches.
     """
     replacements: list[tuple[str, str]] = []
     for mod in module_names:
         cpp_mod = module_path_to_cpp(mod)
-        rel = relative_module_path(current_module, mod)
+        disp = module_display_path(current_module, mod)
         from_str = cpp_mod + "::"
-        to_str = (rel + "::") if rel else ""
-        replacements.append((from_str, to_str))
+        to_str = (disp + "::") if disp else ""
+        if from_str != to_str:
+            replacements.append((from_str, to_str))
     replacements.sort(key=lambda x: len(x[0]), reverse=True)
     result = cpp_text
     for from_str, to_str in replacements:

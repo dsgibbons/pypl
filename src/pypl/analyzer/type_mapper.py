@@ -230,10 +230,7 @@ class TypeMapper:
         if qname is None:
             qname = self.variant_qnames.get(frozenset(non_none))
         if qname is not None:
-            referenced = (qname,) + tuple(
-                f"{a.__module__}.{a.__qualname__}" for a in non_none if isinstance(a, type)
-            )
-            ref = TypeRef(cpp_text=qualified_class_to_cpp(qname), referenced=referenced)
+            ref = TypeRef(cpp_text=qualified_class_to_cpp(qname), referenced=(qname,))
             return self._apply_ref(ref, ref_marker, where, target_kind=None)
 
         mapped = [self._map(a, where, None) for a in non_none]

@@ -17,9 +17,9 @@ from pypl.analyzer.model import (
     Variant,
 )
 from pypl.naming import (
+    module_display_path,
     module_path_to_cpp,
     qualified_class_to_cpp,
-    relative_module_path,
     relativize_cpp_text,
 )
 
@@ -44,8 +44,8 @@ class _RenderCtx:
             return qname
         target_module, class_name = qname.rsplit(".", 1)
         if target_module in self.all_module_names:
-            rel = relative_module_path(self.current_module, target_module)
-            return f"{rel}::{class_name}" if rel else class_name
+            disp = module_display_path(self.current_module, target_module)
+            return f"{disp}::{class_name}" if disp else class_name
         return qualified_class_to_cpp(qname)
 
 
