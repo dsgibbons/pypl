@@ -53,11 +53,15 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
     opts.out_dir.mkdir(parents=True, exist_ok=True)
     all_module_names: frozenset[str] = frozenset(mod.name for mod in result.modules)
     class_to_module: dict[str, str] = {}
+    # None = variant (rendered as <<std::variant>> rather than a ClassKind keyword)
+    kind_map: dict[str, ClassKind | None] = {}
     for mod in result.modules:
         for c in mod.classes:
             class_to_module[c.qualified_name] = mod.name
+            kind_map[c.qualified_name] = c.kind
         for v in mod.variants:
             class_to_module[v.qualified_name] = mod.name
+            kind_map[v.qualified_name] = None
     written: list[Path] = []
     for mod in result.modules:
         if not mod.classes and not mod.variants and not mod.free_functions:
@@ -67,7 +71,7 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
             all_module_names=all_module_names,
             stub_style=opts.stub_style,
         )
-        text = render_module(mod, class_to_module, opts, ctx)
+        text = render_module(mod, class_to_module, opts, ctx, kind_map)
         filename = mod.name.replace(".", "__") + ".puml"
         path = opts.out_dir / filename
         path.write_text(text, encoding="utf-8")
@@ -80,6 +84,7 @@ def render_module(
     class_to_module: dict[str, str],
     opts: EmitOptions,
     ctx: _RenderCtx | None = None,
+    kind_map: dict[str, ClassKind | None] | None = None,
 ) -> str:
     if ctx is None:
         ctx = _RenderCtx(
@@ -129,7 +134,8 @@ def render_module(
             continue
         if ctx.stub_style == "none":
             continue
-        lines.extend(render_stub(qname, ctx))
+        kind = (kind_map or {}).get(qname)
+        lines.extend(render_stub(qname, ctx, kind))
     lines.append("")
 
     # Inheritance arrows
@@ -217,12 +223,22 @@ def render_free_functions(
     return lines
 
 
-def render_stub(qname: str, ctx: _RenderCtx) -> list[str]:
+def render_stub(qname: str, ctx: _RenderCtx, kind: ClassKind | None = ClassKind.CLASS) -> list[str]:
     alias = _alias_id(qname)
     if ctx.stub_style == "bare":
         bare = qname.rsplit(".", 1)[-1]
-        return [f'class "{bare}" as {alias} <<stub>>']
-    display = ctx.stub_display(qname)
+        display = bare
+    else:
+        display = ctx.stub_display(qname)
+    if kind is None:
+        # variant
+        return [f'class "{display}" as {alias} <<std::variant>>']
+    if kind is ClassKind.ABSTRACT:
+        return [f'abstract class "{display}" as {alias} <<stub>>']
+    if kind is ClassKind.ENUM:
+        return [f'enum "{display}" as {alias} <<stub>>']
+    if kind is ClassKind.STRUCT:
+        return [f'struct "{display}" as {alias} <<stub>>']
     return [f'class "{display}" as {alias} <<stub>>']
 
 
