@@ -92,7 +92,6 @@ def render_module(
     lines.append(f"@startuml {mod.name.replace('.', '__')}")
     lines.append(f"title {cpp_path}")
     lines.append("hide empty members")
-    lines.append("skinparam classAttributeIconSize 0")
     lines.append("")
 
     own_qnames = {c.qualified_name for c in mod.classes} | {v.qualified_name for v in mod.variants}

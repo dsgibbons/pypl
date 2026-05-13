@@ -5,8 +5,10 @@ from __future__ import annotations
 import functools
 import importlib
 import inspect
+import sys
 import threading
 from dataclasses import dataclass, field
+from types import FrameType
 
 from pypl.naming import strip_underscores, to_camel
 
@@ -19,16 +21,20 @@ class Call:
     return_repr: str | None = None
 
 
+_SKIP_VAR_NAMES: frozenset[str] = frozenset({"self", "cls", "klass"})
+
+
 @dataclass
 class TraceState:
     calls: list[Call] = field(default_factory=list)
     lifelines: list[tuple[str, str]] = field(default_factory=list)  # (lifeline_id, class_name)
     _instance_ids: dict[int, str] = field(default_factory=dict)
     _per_class_counter: dict[str, int] = field(default_factory=dict)
+    _var_names: dict[str, str] = field(default_factory=dict)  # lifeline_id -> python var name
     _stack: list[str] = field(default_factory=list)
     _lock: threading.RLock = field(default_factory=threading.RLock)
 
-    def get_lifeline(self, instance: object) -> str:
+    def get_lifeline(self, instance: object, caller_frame: FrameType | None) -> str:
         with self._lock:
             oid = id(instance)
             if oid in self._instance_ids:
@@ -39,6 +45,9 @@ class TraceState:
             lifeline = f"{_lifeline_prefix(class_name)}{self._per_class_counter[class_name]}"
             self._instance_ids[oid] = lifeline
             self.lifelines.append((lifeline, class_name))
+            var_name = _find_var_name(instance, caller_frame)
+            if var_name:
+                self._var_names[lifeline] = var_name
             return lifeline
 
 
@@ -50,6 +59,17 @@ def _lifeline_prefix(class_name: str) -> str:
     if len(body) > 1 and body[0] in "IESV" and body[1].isupper():
         body = body[1:]
     return body[0].lower() + body[1:]
+
+
+def _find_var_name(instance: object, start_frame: FrameType | None) -> str | None:
+    """Walk call frames from *start_frame* upward to find a variable name for *instance*."""
+    frame: FrameType | None = start_frame
+    while frame is not None:
+        for name, val in frame.f_locals.items():
+            if val is instance and not name.startswith("_") and name not in _SKIP_VAR_NAMES:
+                return name
+        frame = frame.f_back
+    return None
 
 
 def attach(
@@ -109,7 +129,7 @@ def _wrap_class(
                 continue
             try:
                 setattr(cls, name, wrapped)
-            except AttributeError, TypeError:
+            except Exception:
                 continue
             seen.add(name)
 
@@ -145,7 +165,7 @@ def _is_user_defined_on(cls: type, attr: object) -> bool:
 
 
 def _wrap_callable(attr: object, name: str, state: TraceState):
-    if isinstance(attr, staticmethod) or isinstance(attr, classmethod):
+    if isinstance(attr, (staticmethod, classmethod)):
         return None
     if isinstance(attr, property):
         return None  # leave properties alone for now
@@ -157,7 +177,8 @@ def _wrap_callable(attr: object, name: str, state: TraceState):
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        callee = state.get_lifeline(self)
+        caller_frame = sys._getframe(1)  # frame of whoever called the traced method
+        callee = state.get_lifeline(self, caller_frame)
         caller = state._stack[-1] if state._stack else None
         state.calls.append(Call(caller=caller, callee=callee, method=display_name))
         state._stack.append(callee)
