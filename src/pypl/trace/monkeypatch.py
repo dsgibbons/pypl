@@ -62,14 +62,20 @@ def _lifeline_prefix(class_name: str) -> str:
 
 
 def _find_var_name(instance: object, start_frame: FrameType | None) -> str | None:
-    """Walk call frames from *start_frame* upward to find a variable name for *instance*."""
+    """Walk call frames from *start_frame* upward and return the outermost matching name.
+
+    Taking the outermost (highest) frame's name avoids returning loop variables (e.g.
+    ``particle`` in a ``for particle in self._particles`` loop inside a method) when
+    the object also has a meaningful name in the caller's frame (e.g. ``a``, ``b``).
+    """
+    best: str | None = None
     frame: FrameType | None = start_frame
     while frame is not None:
         for name, val in frame.f_locals.items():
             if val is instance and not name.startswith("_") and name not in _SKIP_VAR_NAMES:
-                return name
+                best = name  # keep overwriting — last (outermost) match wins
         frame = frame.f_back
-    return None
+    return best
 
 
 def attach(
