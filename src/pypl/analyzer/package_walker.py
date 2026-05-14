@@ -29,14 +29,13 @@ from pypl.analyzer.model import (
 )
 from pypl.analyzer.type_mapper import TypeMapper
 from pypl.naming import to_camel
-from pypl.warnings import WarningCollector
+from pypl.warnings import WarningCollector, filter_ignored
 
 
 def analyze_package(package_name: str) -> AnalysisResult:
     pkg = importlib.import_module(package_name)
-    submodules = list(_iter_modules(pkg))
-
     warnings = WarningCollector()
+    submodules = list(_iter_modules(pkg, warnings))
     # Pass 1: collect kinds for every class in the package, plus module-level
     # variant aliases (Union assignments at top level of each module).
     # Variants identity-dedupe across modules: a re-export in __init__.py
@@ -89,7 +88,7 @@ def analyze_package(package_name: str) -> AnalysisResult:
 
     _check_duplicate_owners(modules, warnings)
 
-    return AnalysisResult(modules=modules, warnings=warnings.warnings)
+    return AnalysisResult(modules=modules, warnings=filter_ignored(warnings.warnings))
 
 
 def _check_duplicate_owners(modules: list[Module], warnings: WarningCollector) -> None:
@@ -156,7 +155,9 @@ def _build_ancestors(class_bases: dict[str, tuple[str, ...]]) -> dict[str, set[s
     return cache
 
 
-def _iter_modules(pkg: types.ModuleType) -> list[tuple[str, types.ModuleType]]:
+def _iter_modules(
+    pkg: types.ModuleType, warnings: WarningCollector
+) -> list[tuple[str, types.ModuleType]]:
     """Yield submodules first, the root package last. This ordering ensures
     that variant aliases re-exported in ``__init__.py`` are recorded against
     the submodule that defines them, not against the re-exporting package.
@@ -167,7 +168,12 @@ def _iter_modules(pkg: types.ModuleType) -> list[tuple[str, types.ModuleType]]:
         for info in pkgutil.walk_packages(pkg_path, prefix=pkg.__name__ + "."):
             try:
                 mod = importlib.import_module(info.name)
-            except Exception:
+            except Exception as exc:
+                warnings.emit(
+                    "import-error",
+                    f"could not import {info.name!r}: {type(exc).__name__}: {exc}",
+                    info.name,
+                )
                 continue
             out.append((info.name, mod))
     out.append((pkg.__name__, pkg))
