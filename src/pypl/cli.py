@@ -27,12 +27,40 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="strip the top-level package name from all display text",
     )
+    p_class.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        default=False,
+        help="suppress the list of generated files printed to stdout",
+    )
+    p_class.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        default=False,
+        help="print per-module analysis details to stderr",
+    )
 
     p_seq = sub.add_parser("seq", help="trace a script and emit a sequence diagram")
     p_seq.add_argument("script", help="path to the entry script")
     p_seq.add_argument("--package", required=True, help="package to trace inside")
     p_seq.add_argument("--out", type=Path, default=None)
     p_seq.add_argument("--config", type=Path, default=None)
+    p_seq.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        default=False,
+        help="suppress the generated file path printed to stdout",
+    )
+    p_seq.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        default=False,
+        help="print tracing details to stderr",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "class":
@@ -64,6 +92,10 @@ def _run_class(args: argparse.Namespace) -> int:
         stub_style=cfg.class_diagram.stubs,
         package_alias=package_alias,
     )
+
+    if getattr(args, "verbose", False):
+        _print_verbose_class(result, sys.stderr)
+
     paths = emit_class_diagrams(result, opts)
 
     from pypl.warnings import format_warning, should_use_color
@@ -72,9 +104,29 @@ def _run_class(args: argparse.Namespace) -> int:
     for w in result.warnings:
         print(format_warning(w, color=color), file=sys.stderr)
 
-    for p in paths:
-        print(p)
+    if not getattr(args, "quiet", False):
+        for p in paths:
+            print(p)
     return 0
+
+
+def _print_verbose_class(result: object, stream: object) -> None:
+    from pypl.analyzer.model import AnalysisResult
+
+    assert isinstance(result, AnalysisResult)
+    for mod in result.modules:
+        n_cls = len(mod.classes)
+        n_var = len(mod.variants)
+        n_fn = len(mod.free_functions)
+        parts = []
+        if n_cls:
+            parts.append(f"{n_cls} class{'es' if n_cls != 1 else ''}")
+        if n_var:
+            parts.append(f"{n_var} variant{'s' if n_var != 1 else ''}")
+        if n_fn:
+            parts.append(f"{n_fn} function{'s' if n_fn != 1 else ''}")
+        summary = ", ".join(parts) if parts else "empty"
+        print(f"[pypl] {mod.name}: {summary}", file=stream)  # type: ignore[call-overload]
 
 
 def _run_seq(args: argparse.Namespace) -> int:
@@ -98,6 +150,8 @@ def _run_seq(args: argparse.Namespace) -> int:
         exclude_methods=cfg.trace.exclude_methods,
         per_class=cfg.trace.per_class,
         out_path=out_dir / "sequence.puml",
+        verbose=getattr(args, "verbose", False),
     )
-    print(seq_path)
+    if not getattr(args, "quiet", False):
+        print(seq_path)
     return 0

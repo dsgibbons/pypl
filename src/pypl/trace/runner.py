@@ -18,6 +18,7 @@ def run_trace(
     exclude_methods: list[str],
     per_class: dict[str, dict[str, list[str]]],
     out_path: Path,
+    verbose: bool = False,
 ) -> Path:
     state = TraceState()
     attach(
@@ -27,6 +28,10 @@ def run_trace(
         per_class=per_class,
         state=state,
     )
+    if verbose:
+        print(f"[pypl] tracing package={package!r} script={script}", file=sys.stderr)
+        if include:
+            print(f"[pypl] include: {', '.join(include)}", file=sys.stderr)
     # Make script's containing dir importable.
     script = script.resolve()
     sys.path.insert(0, str(script.parent))
@@ -37,4 +42,6 @@ def run_trace(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         text = emit_sequence(state)
         out_path.write_text(text, encoding="utf-8")
+    if verbose:
+        print(f"[pypl] captured {len(state.calls)} call(s)", file=sys.stderr)
     return out_path
