@@ -19,6 +19,7 @@ class TraceConfig:
 class ClassDiagramConfig:
     out: str = "diagrams/"
     stubs: str = "qualified"
+    package_alias: str | None = None  # None = no change, "" = strip, "s" = replace
 
 
 @dataclass
@@ -67,6 +68,10 @@ def _from_dict(data: dict) -> Config:
         cd = data["class_diagram"]
         cfg.class_diagram.out = cd.get("out", cfg.class_diagram.out)
         cfg.class_diagram.stubs = cd.get("stubs", cfg.class_diagram.stubs)
+        if cd.get("strip_package"):
+            cfg.class_diagram.package_alias = ""
+        elif "package_alias" in cd:
+            cfg.class_diagram.package_alias = cd["package_alias"]
     if "overrides" in data:
         cfg.overrides = dict(data["overrides"])
     return cfg

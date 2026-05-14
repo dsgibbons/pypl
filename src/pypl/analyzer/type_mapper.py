@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc
 import datetime
 import importlib
 import pathlib
@@ -15,6 +16,20 @@ from pypl.analyzer.model import ClassKind, TypeRef
 from pypl.cpp import _CppConst, _CppContainer, _CppFloat, _CppInt, _CppRef, infer_int_width
 from pypl.naming import qualified_class_to_cpp
 from pypl.warnings import WarningCollector
+
+_ITERABLE_ORIGINS: frozenset[object] = frozenset(
+    {
+        collections.abc.Iterable,
+        collections.abc.Iterator,
+        collections.abc.Generator,
+        collections.abc.Sequence,
+        collections.abc.MutableSequence,
+        collections.abc.Collection,
+        collections.abc.Reversible,
+        collections.abc.MutableSet,
+        collections.abc.Set,
+    }
+)
 
 _PRIMITIVE_CPP: dict[type, str] = {
     int: "int",
@@ -177,6 +192,16 @@ class TypeMapper:
 
         if origin in (list, set, dict, tuple, frozenset):
             return self._map_builtin_container(t, origin, where, ref_marker)
+
+        if origin in _ITERABLE_ORIGINS:
+            args = get_args(t)
+            inner = self._map(args[0], where, None) if args else TypeRef("auto")
+            ref = TypeRef(
+                cpp_text=f"std::vector<{inner.cpp_text}>",
+                referenced=inner.referenced,
+                owns=inner.owns,
+            )
+            return self._apply_ref(ref, ref_marker, where, target_kind=None)
 
         if t in _PRIMITIVE_CPP:
             return self._apply_ref(

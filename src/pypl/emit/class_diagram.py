@@ -28,6 +28,7 @@ from pypl.naming import (
 class EmitOptions:
     out_dir: Path
     stub_style: str = "qualified"  # qualified | bare | none
+    package_alias: str | None = None  # None = no change, "" = strip, "s" = replace
 
 
 @dataclass(frozen=True)
@@ -35,9 +36,20 @@ class _RenderCtx:
     current_module: str
     all_module_names: frozenset[str]
     stub_style: str
+    package_alias: str | None = None
+
+    def _apply_alias(self, text: str) -> str:
+        if self.package_alias is None:
+            return text
+        pkg = self.current_module.split(".")[0]
+        old = module_path_to_cpp(pkg) + "::"
+        new = (self.package_alias + "::") if self.package_alias else ""
+        return text.replace(old, new)
 
     def rel(self, cpp_text: str) -> str:
-        return relativize_cpp_text(self.current_module, cpp_text, self.all_module_names)
+        return self._apply_alias(
+            relativize_cpp_text(self.current_module, cpp_text, self.all_module_names)
+        )
 
     def stub_display(self, qname: str) -> str:
         if "." not in qname:
@@ -45,8 +57,10 @@ class _RenderCtx:
         target_module, class_name = qname.rsplit(".", 1)
         if target_module in self.all_module_names:
             disp = module_display_path(self.current_module, target_module)
-            return f"{disp}::{class_name}" if disp else class_name
-        return qualified_class_to_cpp(qname)
+            raw = f"{disp}::{class_name}" if disp else class_name
+        else:
+            raw = qualified_class_to_cpp(qname)
+        return self._apply_alias(raw)
 
 
 def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]:
@@ -70,6 +84,7 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
             current_module=mod.name,
             all_module_names=all_module_names,
             stub_style=opts.stub_style,
+            package_alias=opts.package_alias,
         )
         text = render_module(mod, class_to_module, opts, ctx, kind_map)
         filename = mod.name.replace(".", "__") + ".puml"
@@ -91,8 +106,9 @@ def render_module(
             current_module=mod.name,
             all_module_names=frozenset(),
             stub_style=opts.stub_style,
+            package_alias=opts.package_alias,
         )
-    cpp_path = module_path_to_cpp(mod.name)
+    cpp_path = ctx._apply_alias(module_path_to_cpp(mod.name))
     lines: list[str] = []
     lines.append(f"@startuml {mod.name.replace('.', '__')}")
     lines.append(f"title {cpp_path}")

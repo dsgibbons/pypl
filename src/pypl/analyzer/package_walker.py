@@ -95,15 +95,22 @@ def analyze_package(package_name: str) -> AnalysisResult:
 def _check_duplicate_owners(modules: list[Module], warnings: WarningCollector) -> None:
     """Warn when the same target class is owned (held by value or unique_ptr)
     by more than one distinct owner class, or when a class owns itself.
+
+    Inheritance is excluded: if B inherits from A and A already owns T,
+    B listing T as an owner is expected (Pydantic re-exposes inherited fields)
+    and is not flagged.
     """
+    class_bases: dict[str, tuple[str, ...]] = {
+        cls.qualified_name: cls.bases for mod in modules for cls in mod.classes
+    }
+    ancestors = _build_ancestors(class_bases)
+
     owners_of: dict[str, list[str]] = {}
-    locations: dict[str, str] = {}
     for mod in modules:
         for cls in mod.classes:
             for member in cls.members:
                 for target in member.type.owns:
                     owners_of.setdefault(target, []).append(cls.qualified_name)
-                    locations.setdefault(cls.qualified_name, "")
 
     warnings.set_source("")
     for target, owner_list in owners_of.items():
@@ -116,14 +123,37 @@ def _check_duplicate_owners(modules: list[Module], warnings: WarningCollector) -
                 target,
             )
         if len(distinct) > 1:
-            owners_str = ", ".join(distinct)
-            warnings.emit(
-                "duplicate-owner",
-                f"{target} is owned by multiple classes ({owners_str}). "
-                "Consider cpp.Shared for shared ownership, or cpp.Raw / "
-                "cpp.Weak / cpp.Ref to mark one as non-owning.",
-                target,
-            )
+            # Drop any owner that has an ancestor in `distinct` — that owner
+            # only appears because it inherited the member from the ancestor.
+            unrelated = [o for o in distinct if not (ancestors.get(o, set()) & set(distinct))]
+            if len(unrelated) > 1:
+                owners_str = ", ".join(unrelated)
+                warnings.emit(
+                    "duplicate-owner",
+                    f"{target} is owned by multiple classes ({owners_str}). "
+                    "Consider cpp.Shared for shared ownership, or cpp.Raw / "
+                    "cpp.Weak / cpp.Ref to mark one as non-owning.",
+                    target,
+                )
+
+
+def _build_ancestors(class_bases: dict[str, tuple[str, ...]]) -> dict[str, set[str]]:
+    cache: dict[str, set[str]] = {}
+
+    def _get(qname: str) -> set[str]:
+        if qname in cache:
+            return cache[qname]
+        cache[qname] = set()  # break cycles
+        result: set[str] = set()
+        for base in class_bases.get(qname, ()):
+            result.add(base)
+            result |= _get(base)
+        cache[qname] = result
+        return result
+
+    for qname in class_bases:
+        _get(qname)
+    return cache
 
 
 def _iter_modules(pkg: types.ModuleType) -> list[tuple[str, types.ModuleType]]:

@@ -15,6 +15,18 @@ def main(argv: list[str] | None = None) -> int:
     p_class.add_argument("package", help="dotted import path of the target package")
     p_class.add_argument("--out", type=Path, default=None, help="output directory")
     p_class.add_argument("--config", type=Path, default=None, help="pypl.toml path")
+    p_class.add_argument(
+        "--package-alias",
+        default=None,
+        metavar="ALIAS",
+        help="replace the top-level package name in display text with ALIAS",
+    )
+    p_class.add_argument(
+        "--no-package-prefix",
+        action="store_true",
+        default=False,
+        help="strip the top-level package name from all display text",
+    )
 
     p_seq = sub.add_parser("seq", help="trace a script and emit a sequence diagram")
     p_seq.add_argument("script", help="path to the entry script")
@@ -40,7 +52,18 @@ def _run_class(args: argparse.Namespace) -> int:
     cfg = load_config(args.config, cwd)
     out_dir: Path = args.out if args.out is not None else cwd / cfg.class_diagram.out
     result = analyze_package(args.package)
-    opts = EmitOptions(out_dir=out_dir, stub_style=cfg.class_diagram.stubs)
+    # --no-package-prefix beats --package-alias; both beat toml; toml beats default
+    if args.no_package_prefix:
+        package_alias: str | None = ""
+    elif args.package_alias is not None:
+        package_alias = args.package_alias
+    else:
+        package_alias = cfg.class_diagram.package_alias
+    opts = EmitOptions(
+        out_dir=out_dir,
+        stub_style=cfg.class_diagram.stubs,
+        package_alias=package_alias,
+    )
     paths = emit_class_diagrams(result, opts)
 
     from pypl.warnings import format_warning, should_use_color
