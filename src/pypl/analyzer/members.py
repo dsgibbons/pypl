@@ -48,9 +48,15 @@ def _own_field_annotations(cls: type) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     if BaseModel is not None and isinstance(cls, type) and issubclass(cls, BaseModel):
+        # Pydantic v2 merges parent fields into every subclass's
+        # __pydantic_fields__, so we must restrict to names actually declared
+        # on THIS class.
+        own_names = _pydantic_own_names(cls)
         # Own public fields
-        own_fields = cls.__dict__.get("__pydantic_fields__", {})
-        for fname, finfo in own_fields.items():
+        all_pydantic_fields = cls.__dict__.get("__pydantic_fields__", {})
+        for fname, finfo in all_pydantic_fields.items():
+            if own_names is not None and fname not in own_names:
+                continue  # inherited from a parent — skip
             anno = getattr(finfo, "annotation", None)
             if anno is None:
                 continue
@@ -93,6 +99,43 @@ def _own_field_annotations(cls: type) -> dict[str, Any]:
         for fname, anno in raw_plain.items():
             out[fname] = anno
     return out
+
+
+def _pydantic_own_names(cls: type) -> set[str] | None:
+    """Names annotated directly on *cls* (not inherited via Pydantic merging).
+
+    Returns ``None`` when annotations cannot be determined, in which case the
+    caller should fall back to including all ``__pydantic_fields__`` entries.
+    """
+    names: set[str] = set()
+    found = False
+    # Python ≤ 3.13: __annotations__ is a plain dict in __dict__.
+    raw = cls.__dict__.get("__annotations__")
+    if isinstance(raw, dict):
+        names.update(raw.keys())
+        found = True
+    # Python 3.14: lazy annotations live behind __annotate_func__.
+    annotate = cls.__dict__.get("__annotate_func__")
+    if callable(annotate):
+        try:
+            raw2 = annotate(1)  # format=1 → string (unevaluated) annotations
+            if isinstance(raw2, dict):
+                names.update(raw2.keys())
+                found = True
+        except Exception:
+            pass
+    # Final fallback: cls.__annotations__ — own-only in all Python versions
+    # (Python 3.14 stores via a getset descriptor, but still returns only THIS
+    # class's annotations; try-except guards against evaluation failures).
+    if not found:
+        try:
+            raw3 = cls.__annotations__  # type: ignore[union-attr]
+            if isinstance(raw3, dict):
+                names.update(raw3.keys())
+                found = True
+        except Exception:
+            pass
+    return names if found else None
 
 
 def collect_methods(
