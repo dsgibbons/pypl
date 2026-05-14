@@ -266,3 +266,100 @@ def test_cli_verbose_prints_module_info(tmp_path: Path) -> None:
         assert pkg in output
     finally:
         _cleanup_pkg(tmp_path, pkg)
+
+
+# ---------------------------------------------------------------------------
+# Bug fix: variant attributed to importing module instead of defining module
+# ---------------------------------------------------------------------------
+
+
+def test_variant_attributed_to_defining_module(tmp_path: Path) -> None:
+    """A tagged union defined in b_definer.py but imported into a_user.py must
+    be attributed to b_definer, not a_user.
+
+    Without the fix, pkgutil.walk_packages walks alphabetically, so a_user is
+    processed first; the id()-based dedup then marks the variant as 'seen' and
+    skips b_definer — placing the UML node in the wrong module.
+    """
+    pkg = "tpkg_variant_attr"
+    _make_pkg(
+        tmp_path,
+        pkg,
+        {
+            # Alphabetically earlier — processes first without the fix.
+            "a_user.py": """\
+                from tpkg_variant_attr.b_definer import VShape
+
+                class Canvas:
+                    shape: VShape | None = None
+            """,
+            # Defines the variant.
+            "b_definer.py": """\
+                class Circle:
+                    radius: float = 1.0
+
+                class Square:
+                    side: float = 1.0
+
+                VShape = Circle | Square
+            """,
+        },
+    )
+    try:
+        from pypl.analyzer.package_walker import analyze_package
+
+        result = analyze_package(pkg)
+
+        # Locate the variant in the result.
+        found: dict[str, str] = {}  # variant name -> module it was placed in
+        for mod in result.modules:
+            for v in mod.variants:
+                found[v.name] = mod.name
+
+        assert "VShape" in found, (
+            f"VShape variant not found at all; modules={[m.name for m in result.modules]}"
+        )
+        assert found["VShape"] == f"{pkg}.b_definer", (
+            f"VShape attributed to {found['VShape']!r} instead of {pkg}.b_definer"
+        )
+    finally:
+        _cleanup_pkg(tmp_path, pkg)
+
+
+def test_variant_init_reexport_still_attributed_to_submodule(tmp_path: Path) -> None:
+    """Re-exporting a variant through __init__.py must not move it to __init__."""
+    pkg = "tpkg_variant_init"
+    _make_pkg(
+        tmp_path,
+        pkg,
+        {
+            "shapes.py": """\
+                class Circle:
+                    radius: float = 1.0
+
+                class Square:
+                    side: float = 1.0
+
+                VShape = Circle | Square
+            """,
+        },
+    )
+    # Overwrite the empty __init__.py with a re-export.
+    (tmp_path / pkg / "__init__.py").write_text(
+        "from tpkg_variant_init.shapes import VShape\n", encoding="utf-8"
+    )
+    try:
+        from pypl.analyzer.package_walker import analyze_package
+
+        result = analyze_package(pkg)
+        found: dict[str, str] = {}
+        for mod in result.modules:
+            for v in mod.variants:
+                found[v.name] = mod.name
+
+        assert "VShape" in found
+        assert found["VShape"] == f"{pkg}.shapes", (
+            f"VShape attributed to {found['VShape']!r} instead of {pkg}.shapes"
+        )
+    finally:
+        _cleanup_pkg(tmp_path, pkg)

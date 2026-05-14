@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
 import pkgutil
@@ -198,8 +199,13 @@ def _own_classes(mod: types.ModuleType, mod_name: str) -> list[type]:
 
 def _collect_module_variants(mod: types.ModuleType, seen_ids: set[int]) -> dict[frozenset, str]:
     out: dict[frozenset, str] = {}
+    own_names = _module_own_names(mod)
     for name, val in vars(mod).items():
         if name.startswith("_"):
+            continue
+        # If we could read the source, only accept names that are directly
+        # assigned in this module (not just imported from a sibling).
+        if own_names is not None and name not in own_names:
             continue
         origin = get_origin(val)
         if origin is Union or origin is types.UnionType:
@@ -208,6 +214,29 @@ def _collect_module_variants(mod: types.ModuleType, seen_ids: set[int]) -> dict[
             seen_ids.add(id(val))
             out[frozenset(get_args(val))] = name
     return out
+
+
+def _module_own_names(mod: types.ModuleType) -> frozenset[str] | None:
+    """Return the set of names that are directly assigned in *mod*'s source.
+
+    Returns ``None`` when the source is unavailable (built-ins, C extensions,
+    etc.) so callers can fall back to the old id()-based dedup.
+    """
+    try:
+        source = inspect.getsource(mod)
+        tree = ast.parse(source)
+    except Exception:
+        return None
+    names: set[str] = set()
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+    return frozenset(names)
 
 
 def _class_to_ir(

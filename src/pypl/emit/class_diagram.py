@@ -116,6 +116,14 @@ def render_module(
     lines.append("")
 
     own_qnames = {c.qualified_name for c in mod.classes} | {v.qualified_name for v in mod.variants}
+    # Only track references that will produce a drawn edge — stubs for
+    # references that appear solely in method/function signatures (no arrow)
+    # are omitted so they don't clutter the diagram as isolated boxes.
+    #   member types      → association arrows  (included)
+    #   bases             → inheritance arrows  (included)
+    #   variant alts      → realization arrows  (included)
+    #   method params/ret → no arrow            (excluded)
+    #   free fn params/ret→ no arrow            (excluded)
     referenced_qnames: set[str] = set()
 
     for c in mod.classes:
@@ -123,10 +131,6 @@ def render_module(
         lines.append("")
         for member in c.members:
             referenced_qnames.update(member.type.referenced)
-        for method in c.methods:
-            for p in method.params:
-                referenced_qnames.update(p.type.referenced)
-            referenced_qnames.update(method.return_type.referenced)
         for base in c.bases:
             referenced_qnames.add(base)
 
@@ -139,10 +143,6 @@ def render_module(
     if mod.free_functions:
         lines.extend(render_free_functions(mod.name, mod.free_functions, ctx))
         lines.append("")
-        for f in mod.free_functions:
-            for p in f.params:
-                referenced_qnames.update(p.type.referenced)
-            referenced_qnames.update(f.return_type.referenced)
 
     foreign_qnames = (referenced_qnames - own_qnames) - _builtin_pseudo_refs(referenced_qnames)
     for qname in sorted(foreign_qnames):
