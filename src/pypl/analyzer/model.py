@@ -111,3 +111,8 @@ class Warning_:
 class AnalysisResult:
     modules: list[Module] = field(default_factory=list)
     warnings: list[Warning_] = field(default_factory=list)
+    # Inferred kinds for third-party types referenced from the analyzed package.
+    # Keyed by qualified Python name (e.g. ``uuid.UUID``). Populated for any
+    # third-party class that the analyzer can resolve and inspect; absent
+    # entries default to ``ClassKind.CLASS`` at render time.
+    third_party_kinds: dict[str, ClassKind] = field(default_factory=dict)

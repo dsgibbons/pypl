@@ -76,6 +76,9 @@ def emit_class_diagrams(result: AnalysisResult, opts: EmitOptions) -> list[Path]
         for v in mod.variants:
             class_to_module[v.qualified_name] = mod.name
             kind_map[v.qualified_name] = None
+    # Third-party kinds resolved by the analyzer. Own-package entries always win.
+    for qname, kind in result.third_party_kinds.items():
+        kind_map.setdefault(qname, kind)
     written: list[Path] = []
     for mod in result.modules:
         if not mod.classes and not mod.variants and not mod.free_functions:
@@ -145,12 +148,13 @@ def render_module(
         lines.append("")
 
     foreign_qnames = (referenced_qnames - own_qnames) - _builtin_pseudo_refs(referenced_qnames)
+    km = kind_map or {}
     for qname in sorted(foreign_qnames):
-        if qname not in class_to_module:
-            continue
         if ctx.stub_style == "none":
             continue
-        kind = (kind_map or {}).get(qname)
+        # Variants live as ``None`` in the map; absent qnames (unresolved
+        # third-party) default to ``ClassKind.CLASS``.
+        kind = km[qname] if qname in km else ClassKind.CLASS
         lines.extend(render_stub(qname, ctx, kind))
     lines.append("")
 

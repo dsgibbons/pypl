@@ -6,6 +6,7 @@ import ast
 import importlib
 import inspect
 import pkgutil
+import sys
 import types
 import typing
 from enum import Enum
@@ -89,7 +90,75 @@ def analyze_package(package_name: str) -> AnalysisResult:
 
     _check_duplicate_owners(modules, warnings)
 
-    return AnalysisResult(modules=modules, warnings=filter_ignored(warnings.warnings))
+    own_qnames = {cls.qualified_name for mod in modules for cls in mod.classes} | {
+        v.qualified_name for mod in modules for v in mod.variants
+    }
+    third_party_kinds = _collect_third_party_kinds(modules, own_qnames)
+
+    return AnalysisResult(
+        modules=modules,
+        warnings=filter_ignored(warnings.warnings),
+        third_party_kinds=third_party_kinds,
+    )
+
+
+def _collect_third_party_kinds(modules: list[Module], own_qnames: set[str]) -> dict[str, ClassKind]:
+    """For every third-party qname referenced from the analyzed package, resolve
+    the actual Python class and infer its kind. Unresolvable qnames are omitted
+    and default to ``ClassKind.CLASS`` at render time.
+    """
+    candidates: set[str] = set()
+    for mod in modules:
+        for cls in mod.classes:
+            for base in cls.bases:
+                if base not in own_qnames:
+                    candidates.add(base)
+            for member in cls.members:
+                for ref in member.type.referenced:
+                    if ref not in own_qnames:
+                        candidates.add(ref)
+        for v in mod.variants:
+            for alt in v.alternatives:
+                if alt not in own_qnames:
+                    candidates.add(alt)
+
+    out: dict[str, ClassKind] = {}
+    for qname in candidates:
+        if qname.startswith("typing.") or qname.startswith("builtins."):
+            continue
+        cls = _resolve_qname(qname)
+        if cls is None:
+            continue
+        out[qname] = kind_mod.infer_kind(cls)
+    return out
+
+
+def _resolve_qname(qname: str) -> type | None:
+    """Resolve a ``module.QualName`` string to its Python class, if possible.
+
+    The split between module name and ``__qualname__`` isn't known up front
+    (nested classes can put dots in ``__qualname__``), so we probe from the
+    longest plausible module prefix down to the shortest.
+    """
+    if "." not in qname:
+        return None
+    parts = qname.split(".")
+    for i in range(len(parts) - 1, 0, -1):
+        mod_name = ".".join(parts[:i])
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            try:
+                mod = importlib.import_module(mod_name)
+            except Exception:
+                continue
+        obj: object = mod
+        for attr in parts[i:]:
+            obj = getattr(obj, attr, None)
+            if obj is None:
+                break
+        if isinstance(obj, type):
+            return obj
+    return None
 
 
 def _check_duplicate_owners(modules: list[Module], warnings: WarningCollector) -> None:
