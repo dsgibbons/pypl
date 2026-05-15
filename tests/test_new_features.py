@@ -363,3 +363,89 @@ def test_variant_init_reexport_still_attributed_to_submodule(tmp_path: Path) -> 
         )
     finally:
         _cleanup_pkg(tmp_path, pkg)
+
+
+# ---------------------------------------------------------------------------
+# Single-class variant aliases (``VName = SClass`` and ``VName = Union[X]``)
+# ---------------------------------------------------------------------------
+
+
+def test_single_class_variant_bare_alias(tmp_path: Path) -> None:
+    """``VName = SomeClass`` with a V prefix is a single-element variant."""
+    pkg = "tpkg_variant_single_bare"
+    _make_pkg(
+        tmp_path,
+        pkg,
+        {
+            "m.py": """\
+                class SFoo:
+                    x: int = 0
+
+                VFoo = SFoo
+            """,
+        },
+    )
+    try:
+        from pypl.analyzer.package_walker import analyze_package
+
+        result = analyze_package(pkg)
+        found = {v.name: v.alternatives for m in result.modules for v in m.variants}
+        assert "VFoo" in found, f"VFoo not detected as a variant; found={found}"
+        assert found["VFoo"] == (f"{pkg}.m.SFoo",)
+    finally:
+        _cleanup_pkg(tmp_path, pkg)
+
+
+def test_single_class_variant_union_subscript(tmp_path: Path) -> None:
+    """``VName = Union[X]`` collapses to ``X`` at runtime but is detected via AST."""
+    pkg = "tpkg_variant_single_union"
+    _make_pkg(
+        tmp_path,
+        pkg,
+        {
+            "m.py": """\
+                from typing import Union
+
+                class SFoo:
+                    x: int = 0
+
+                VFoo = Union[SFoo]
+            """,
+        },
+    )
+    try:
+        from pypl.analyzer.package_walker import analyze_package
+
+        result = analyze_package(pkg)
+        found = {v.name: v.alternatives for m in result.modules for v in m.variants}
+        assert "VFoo" in found, f"VFoo not detected as a variant; found={found}"
+        assert found["VFoo"] == (f"{pkg}.m.SFoo",)
+    finally:
+        _cleanup_pkg(tmp_path, pkg)
+
+
+def test_non_v_prefixed_alias_is_not_a_variant(tmp_path: Path) -> None:
+    """``Plain = SomeClass`` (no V prefix) must NOT become a variant."""
+    pkg = "tpkg_variant_no_prefix"
+    _make_pkg(
+        tmp_path,
+        pkg,
+        {
+            "m.py": """\
+                class SFoo:
+                    x: int = 0
+
+                Reexport = SFoo
+            """,
+        },
+    )
+    try:
+        from pypl.analyzer.package_walker import analyze_package
+
+        result = analyze_package(pkg)
+        found = {v.name for m in result.modules for v in m.variants}
+        assert "Reexport" not in found, (
+            f"non-V-prefixed alias was wrongly classified as a variant: {found}"
+        )
+    finally:
+        _cleanup_pkg(tmp_path, pkg)

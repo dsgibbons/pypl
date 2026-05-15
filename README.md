@@ -58,7 +58,7 @@ PlantUML preview).
 | Subclass of `enum.Enum` | `enum` | `E` |
 | `ABC` subclass or has `@abstractmethod` | `abstract class` | `I` |
 | Pure data: all-public fields, no methods, no non-marker bases | `struct` | `S` |
-| Module-level `Union[...]` / `T \| U` alias | `class <<std::variant>>` | `V` |
+| Module-level `Union[...]` / `T \| U` alias (or `VName = X` single-class alias) | `class <<std::variant>>` | `V` |
 | Anything else | `class` | (none of the above) |
 
 Class identifiers stay PascalCase. Field and method identifiers convert

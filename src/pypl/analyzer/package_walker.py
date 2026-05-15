@@ -269,6 +269,7 @@ def _own_classes(mod: types.ModuleType, mod_name: str) -> list[type]:
 def _collect_module_variants(mod: types.ModuleType, seen_ids: set[int]) -> dict[frozenset, str]:
     out: dict[frozenset, str] = {}
     own_names = _module_own_names(mod)
+    single_class_targets = _single_class_variant_targets(mod)
     for name, val in vars(mod).items():
         if name.startswith("_"):
             continue
@@ -282,6 +283,19 @@ def _collect_module_variants(mod: types.ModuleType, seen_ids: set[int]) -> dict[
                 continue
             seen_ids.add(id(val))
             out[frozenset(get_args(val))] = name
+            continue
+        # Single-class variants: ``VName = SomeClass`` or ``VName = Union[X]``
+        # (which Python collapses to ``X`` at runtime). Detected from the AST;
+        # gated on the ``V[A-Z]`` naming convention so plain re-exports aren't
+        # silently reclassified.
+        if name in single_class_targets and isinstance(val, type) and _has_v_prefix(name):
+            key = frozenset((val,))
+            if key in out:
+                continue
+            if id(val) in seen_ids:
+                continue
+            seen_ids.add(id(val))
+            out[key] = name
     return out
 
 
@@ -306,6 +320,62 @@ def _module_own_names(mod: types.ModuleType) -> frozenset[str] | None:
             if isinstance(node.target, ast.Name):
                 names.add(node.target.id)
     return frozenset(names)
+
+
+def _single_class_variant_targets(mod: types.ModuleType) -> frozenset[str]:
+    """Return names assigned at module top level to either a single class
+    reference (``VName = SomeClass``) or an explicit single-arg ``Union[X]``
+    subscript. Python collapses ``Union[X]`` to ``X`` at runtime, so the AST
+    is the only place to see the user's intent.
+    """
+    try:
+        source = inspect.getsource(mod)
+        tree = ast.parse(source)
+    except Exception:
+        return frozenset()
+    out: set[str] = set()
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target = node.target
+            value = node.value
+        else:
+            continue
+        if not isinstance(target, ast.Name):
+            continue
+        if _is_single_class_variant_rhs(value):
+            out.add(target.id)
+    return frozenset(out)
+
+
+def _is_single_class_variant_rhs(value: ast.AST) -> bool:
+    """True for RHS forms that name exactly one class: a bare ``Name`` or
+    ``Union[X]`` with a single subscript argument.
+    """
+    if isinstance(value, ast.Name):
+        return True
+    if isinstance(value, ast.Subscript):
+        head = value.value
+        head_name = (
+            head.id
+            if isinstance(head, ast.Name)
+            else head.attr
+            if isinstance(head, ast.Attribute)
+            else None
+        )
+        if head_name != "Union":
+            return False
+        slice_node = value.slice
+        if isinstance(slice_node, ast.Tuple):
+            return False
+        return True
+    return False
+
+
+def _has_v_prefix(name: str) -> bool:
+    return len(name) > 1 and name[0] == "V" and name[1].isupper()
 
 
 def _class_to_ir(
